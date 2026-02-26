@@ -1,0 +1,5 @@
+{
+  "name": "InstaInsights",
+  "description": "Instagram profile insights and analytics dashboard powered by Apify and Gemini.",
+  "requestFramePermissions": []
+}
