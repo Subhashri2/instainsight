@@ -28,41 +28,60 @@ async function startServer() {
       });
 
       console.log(`Starting Apify actor for username: ${username}`);
-      // Added proxyConfiguration to avoid BLOCKED errors and removed conflicting search parameters
-      const run = await client.actor("apify/instagram-scraper").call({
+      // Switched to 'apify/instagram-profile-scraper' as requested
+      // This actor handles proxies and cookies internally for better reliability
+      const run = await client.actor("apify/instagram-profile-scraper").call({
           usernames: [username],
-          resultsType: "posts",
-          resultsLimit: 20,
-          proxyConfiguration: {
-              useApifyProxy: true,
-              groups: ['RESIDENTIAL'] // Residential proxies are less likely to be blocked
-          }
       });
 
       console.log(`Apify run finished. Fetching dataset: ${run.defaultDatasetId}`);
-      let { items } = await client.dataset(run.defaultDatasetId).listItems();
+      const { items } = await client.dataset(run.defaultDatasetId).listItems();
       
-      // Filter for Reels (Videos) as requested
-      items = items.filter((item: any) => item.type === 'Video' || item.type === 'Sidecar' || item.isReel === true);
-
       if (!items || items.length === 0) {
          return res.status(404).json({ 
-           error: "No Reels found.",
-           details: "The scraper couldn't find any Reels for this username. They might only have static images or a private profile."
+           error: "User not found or profile is private.",
+           details: "The profile scraper couldn't find any data for this username."
          });
       }
 
-      const summaryData = items.map((item: any) => ({
-          type: item.type,
-          likes: item.likesCount,
+      // Handle the structure of instagram-profile-scraper
+      // It typically returns profile objects which may contain latestPosts
+      let posts = [];
+      const profile = items[0];
+      
+      if (profile.latestPosts && Array.isArray(profile.latestPosts)) {
+        posts = profile.latestPosts;
+      } else if (items.length > 1 || (items[0] && items[0].type)) {
+        // If items are already posts (some configurations/versions)
+        posts = items;
+      }
+
+      // Filter for Reels (Videos) if possible, otherwise use what we have
+      let filteredPosts = posts.filter((item: any) => item.type === 'Video' || item.isReel === true || item.productType === 'clips');
+      
+      // If no reels found but we have posts, maybe the type naming is different or we should just show posts
+      if (filteredPosts.length === 0 && posts.length > 0) {
+        filteredPosts = posts;
+      }
+
+      if (filteredPosts.length === 0) {
+         return res.status(404).json({ 
+           error: "No posts found.",
+           details: "The scraper found the profile but couldn't retrieve any recent posts or Reels."
+         });
+      }
+
+      const summaryData = filteredPosts.slice(0, 20).map((item: any) => ({
+          type: item.type || item.productType,
+          likes: item.likesCount || item.displayResources?.[0]?.config_width, // Fallback or specific field
           comments: item.commentsCount,
-          videoViews: item.videoViewCount,
+          videoViews: item.videoViewCount || item.videoPlayCount,
           timestamp: item.timestamp,
           caption: item.caption ? item.caption.substring(0, 100) : "",
       }));
 
       res.json({
-          posts: items,
+          posts: filteredPosts.slice(0, 20),
           summaryData: summaryData
       });
 
