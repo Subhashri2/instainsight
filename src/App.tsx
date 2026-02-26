@@ -1,45 +1,29 @@
-import React, { useState, useMemo } from 'react';
-import { Search, Loader2, TrendingUp, Heart, MessageCircle, PlaySquare, Image as ImageIcon, AlertCircle, Zap, BarChart3, Clock, Timer, Sparkles, Hash, Lightbulb, ArrowUpRight, Share2, Layout } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
+import React, { useState } from 'react';
+import { Search, Loader2, TrendingUp, Heart, MessageCircle, PlaySquare, Image as ImageIcon, AlertCircle, Sparkles } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import Markdown from 'react-markdown';
 import { format } from 'date-fns';
-import { motion, AnimatePresence } from 'framer-motion';
+import { GoogleGenAI } from "@google/genai";
+import { ActionCard } from './components/ActionCard';
+import { ActionCardData } from './types/ActionCard';
 
 export default function App() {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState('');
   const [error, setError] = useState<{ message: string; details?: string; suggestion?: string } | null>(null);
-  const [data, setData] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'strategy' | 'feed'>('dashboard');
+  const [data, setData] = useState<{
+    posts: any[];
+    summaryData: any[];
+    actionCards: ActionCardData[];
+    insights: string;
+    profile?: any;
+  } | null>(null);
+  const [activeTab, setActiveTab] = useState<'actions' | 'performance'>('actions');
 
-  // Sync with URL query parameter on mount
-  React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const u = params.get('u');
-    if (u) {
-      setUsername(u);
-    }
-  }, []);
-
-  const handleSearch = async (e: React.FormEvent, overrideUsername?: string) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    let targetUsername = (overrideUsername || username).trim();
-    if (!targetUsername) return;
-
-    if (targetUsername.includes('instagram.com/')) {
-      try {
-        const urlPath = targetUsername.split('instagram.com/')[1];
-        targetUsername = urlPath.split('/')[0].split('?')[0];
-        setUsername(targetUsername);
-      } catch (err) {
-        console.error("URL parsing error:", err);
-      }
-    }
-
-    const newUrl = new URL(window.location.href);
-    newUrl.searchParams.set('u', targetUsername);
-    window.history.pushState({}, '', newUrl);
+    if (!username.trim()) return;
 
     setLoading(true);
     setLoadingStage('Scraping Instagram profile...');
@@ -47,10 +31,11 @@ export default function App() {
     setData(null);
 
     try {
+      // 1. Fetch data from backend
       const res = await fetch('/api/insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: targetUsername }),
+        body: JSON.stringify({ username: username.trim() }),
       });
 
       const result = await res.json();
@@ -63,8 +48,87 @@ export default function App() {
         };
       }
 
-      setData(result);
-      setActiveTab('dashboard');
+      // 2. Generate insights using Gemini
+      setLoadingStage('Analyzing metrics & generating actions...');
+      const prompt = `Analyze the following recent Instagram posts for the user @${username} and provide actionable Action UI Cards in JSON format.
+      
+      Data: ${JSON.stringify(result.summaryData)}
+      
+      CRITICAL: You MUST return a VALID JSON object with the following structure:
+      {
+        "action_cards": [
+          {
+            "id": "string",
+            "type": "follower_growth | viral_opportunity | sales_opportunity | hook_improvement | best_post_time | content_gap | niche_winner | engagement_boost | conversion_opportunity | performance_warning",
+            "title": "string",
+            "priority": "high | medium | low",
+            "confidence_score": 0-100,
+            "trigger": "A description of what happened in the data that triggered this card",
+            "action": { "primary": "What to do", "secondary": "Optional detail" },
+            "ready_to_copy": { "hook": "The first sentence/line", "caption": "The main body", "cta": "Call to action" },
+            "post_time": { "date": "Tomorrow | Today | Day of Week", "time": "HH:MM" },
+            "expected_result": { "followers_increase": "+X%", "confidence_level": "High | Medium" },
+            "meta": { "difficulty": "Easy | Medium | Hard", "estimated_time_to_create": "X minutes", "impact_score": 1-10, "urgency_score": 1-10 }
+          }
+        ],
+        "overall_summary_markdown": "A brief overview of current performance in Markdown"
+      }
+
+      REQUIRED:
+      - Minimum 3 cards, Maximum 7 cards.
+      - Each card must answer: What happened? What to do? What to post? When to post? What result?
+      - Use these types where appropriate: follower_growth, viral_opportunity, sales_opportunity, hook_improvement, best_post_time, content_gap, niche_winner, engagement_boost, conversion_opportunity, performance_warning.
+      - Be specific with hooks and captions.
+      - Sort mentally by (Impact Score * 0.5 + Confidence Score * 0.3 + Urgency Score * 0.2) but return all for frontend to sort.
+      - Return ONLY the JSON object. No other text.`;
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw {
+          message: "Gemini API Key missing",
+          details: "The application couldn't find a valid Gemini API key in the environment.",
+          suggestion: "Please ensure the GEMINI_API_KEY is correctly configured in AI Studio."
+        };
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      const aiResponse = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+      });
+
+      if (!aiResponse || !aiResponse.text) {
+        throw {
+          message: "AI Generation failed",
+          details: "The Gemini model returned an empty response.",
+          suggestion: "Try again in a few moments."
+        };
+      }
+
+      let parsedInsights;
+      try {
+        const text = aiResponse.text.replace(/```json/g, '').replace(/```/g, '').trim();
+        parsedInsights = JSON.parse(text);
+      } catch (e) {
+        console.error("Failed to parse AI response as JSON:", aiResponse.text);
+        throw {
+          message: "AI Analysis Format Error",
+          details: "The AI returned a response that couldn't be parsed correctly.",
+          suggestion: "Please try again."
+        };
+      }
+
+      const sortedCards = (parsedInsights.action_cards || []).sort((a: any, b: any) => {
+        const scoreA = (a.meta.impact_score * 0.5) + (a.confidence_score * 0.3) + (a.meta.urgency_score * 0.2);
+        const scoreB = (b.meta.impact_score * 0.5) + (b.confidence_score * 0.3) + (b.meta.urgency_score * 0.2);
+        return scoreB - scoreA;
+      });
+
+      setData({
+        ...result,
+        actionCards: sortedCards,
+        insights: parsedInsights.overall_summary_markdown
+      });
     } catch (err: any) {
       console.error("Analysis error:", err);
       setError({
@@ -78,466 +142,322 @@ export default function App() {
     }
   };
 
-  const metrics = useMemo(() => {
-    if (!data || !data.posts) return null;
-    const posts = data.posts;
-    const totalLikes = posts.reduce((acc: number, p: any) => acc + (p.likesCount || 0), 0);
-    const totalComments = posts.reduce((acc: number, p: any) => acc + (p.commentsCount || 0), 0);
-    const totalViews = posts.reduce((acc: number, p: any) => acc + (p.videoViewCount || p.videoPlayCount || 0), 0);
-    const avgLikes = Math.round(totalLikes / posts.length);
-    const avgViews = Math.round(totalViews / posts.length);
+  const processChartData = (posts: any[]) => {
+    return posts
+      .slice()
+      .reverse()
+      .map((post: any, index: number) => ({
+        name: `Post ${index + 1}`,
+        date: post.timestamp ? format(new Date(post.timestamp), 'MMM dd') : '',
+        likes: post.likesCount || 0,
+        comments: post.commentsCount || 0,
+        views: post.videoViewCount || 0,
+        type: post.type,
+      }));
+  };
 
-    const engagementRate = (((totalLikes + totalComments) / (totalViews || 1)) * 100).toFixed(2);
-    const growthScore = Math.min(100, Math.round((avgLikes / 500) * 100));
-    const viralProb = Math.min(100, Math.round((totalViews / (totalLikes || 1)) * 1.5));
-
-    const bestPost = [...posts].sort((a, b) => (b.likesCount || 0) - (a.likesCount || 0))[0];
-
-    const hours = posts.map((p: any) => p.timestamp ? new Date(p.timestamp).getHours() : 12);
-    const bestHour = hours.sort((a: number, b: number) =>
-      hours.filter((v: number) => v === a).length - hours.filter((v: number) => v === b).length
-    ).pop();
-
+  const getAverages = (posts: any[]) => {
+    if (!posts || posts.length === 0) return { likes: 0, comments: 0, views: 0 };
+    const totalLikes = posts.reduce((acc, post) => acc + (post.likesCount || 0), 0);
+    const totalComments = posts.reduce((acc, post) => acc + (post.commentsCount || 0), 0);
+    const totalViews = posts.reduce((acc, post) => acc + (post.videoViewCount || 0), 0);
     return {
-      totalPosts: posts.length,
-      avgLikes,
-      avgViews,
-      engagementRate,
-      growthScore,
-      viralProb,
-      bestPost,
-      bestPostingTime: `${bestHour}:00`,
-      bestReelDuration: "12-18s"
+      likes: Math.round(totalLikes / posts.length),
+      comments: Math.round(totalComments / posts.length),
+      views: Math.round(totalViews / posts.length),
     };
-  }, [data]);
+  };
 
   return (
-    <div className="min-h-screen bg-[#020203] text-zinc-200 font-sans selection:bg-indigo-500/30 selection:text-white">
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <motion.div
-          animate={{ scale: [1, 1.2, 1], rotate: [0, 90, 0], x: [0, 100, 0], y: [0, 50, 0] }}
-          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute -top-24 -left-24 w-96 h-96 bg-indigo-600/10 blur-[120px] rounded-full"
-        />
-        <motion.div
-          animate={{ scale: [1, 1.5, 1], rotate: [0, -90, 0], x: [0, -100, 0], y: [0, -50, 0] }}
-          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          className="absolute -bottom-24 -right-24 w-[500px] h-[500px] bg-purple-600/10 blur-[150px] rounded-full"
-        />
-      </div>
-
-      <header className="sticky top-0 z-50 border-b border-white/5 bg-black/40 backdrop-blur-2xl">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-4 group cursor-pointer" onClick={() => window.location.href = '/'}>
-            <div className="w-11 h-11 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center transition-all group-hover:border-indigo-500/50 group-hover:bg-indigo-500/10">
-              <TrendingUp size={24} className="text-indigo-400" />
+    <div className="min-h-screen bg-[#f5f5f5] text-gray-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-500 rounded-lg flex items-center justify-center text-white">
+              <TrendingUp size={20} />
             </div>
-            <div>
-              <h1 className="text-xl font-black tracking-tight text-white">CORTEX<span className="text-indigo-500">.AI</span></h1>
-              <p className="text-[9px] text-zinc-500 uppercase tracking-[0.2em] font-bold">Social Intelligence Engine</p>
-            </div>
+            <h1 className="text-xl font-semibold tracking-tight">InstaInsights</h1>
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <form onSubmit={handleSearch} className="flex items-center gap-3 w-full md:w-auto">
-              <div className="relative flex-1 md:w-96">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter username or profile link..."
-                  className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all text-sm placeholder:text-zinc-600"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !username.trim()}
-                className="px-8 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-bold hover:bg-indigo-500 disabled:opacity-50 transition-all active:scale-95 shadow-lg shadow-indigo-600/20 shrink-0"
-              >
-                {loading ? <Loader2 className="animate-spin" size={20} /> : 'Run Engine'}
-              </button>
-            </form>
-            {data && (
-              <button
-                onClick={() => { setData(null); setUsername(''); window.history.pushState({}, '', '/'); }}
-                className="p-3 bg-white/5 border border-white/10 rounded-2xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all shrink-0"
-                title="New Analysis"
-              >
-                <Layout size={20} />
-              </button>
-            )}
-          </div>
+          <form onSubmit={handleSearch} className="w-full sm:w-auto flex items-center">
+            <div className="relative w-full sm:w-80">
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter Instagram username..."
+                className="w-full pl-10 pr-4 py-2 bg-gray-100 border-transparent rounded-full focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all outline-none text-sm"
+              />
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || !username.trim()}
+              className="ml-2 px-4 py-2 bg-indigo-600 text-white rounded-full text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Analyze
+            </button>
+          </form>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {loading && (
-          <div className="flex flex-col items-center justify-center py-40 space-y-8">
-            <div className="relative">
-              <div className="w-24 h-24 border-2 border-indigo-500/10 border-t-indigo-500 rounded-full animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Sparkles className="text-indigo-400 animate-pulse" size={32} />
-              </div>
-            </div>
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold text-white tracking-tight">Processing Intelligence</h2>
-              <p className="text-zinc-500 text-sm max-w-xs mx-auto leading-relaxed">{loadingStage}</p>
-            </div>
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mb-4" />
+            <h2 className="text-lg font-medium">Analyzing @{username}</h2>
+            <p className="text-gray-500 text-sm mt-2 text-center max-w-md">
+              {loadingStage} <br />
+              This usually takes 1-2 minutes depending on the profile size.
+            </p>
           </div>
         )}
 
         {error && (
-          <div className="max-w-2xl mx-auto bg-red-500/5 border border-red-500/10 rounded-3xl p-10 backdrop-blur-xl">
-            <div className="flex gap-6">
-              <div className="w-14 h-14 bg-red-500/10 rounded-2xl flex items-center justify-center shrink-0">
-                <AlertCircle className="text-red-500" size={32} />
-              </div>
-              <div className="space-y-4">
-                <h3 className="text-2xl font-bold text-white">{error.message}</h3>
-                <p className="text-zinc-500 text-sm font-mono bg-white/5 p-4 rounded-xl break-all border border-white/5">{error.details}</p>
-                <div className="flex items-center gap-2 text-red-400 text-sm font-bold">
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-6 flex items-start gap-4 max-w-2xl mx-auto">
+            <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={24} />
+            <div className="flex-1">
+              <h3 className="text-red-800 font-semibold text-lg">{error.message}</h3>
+              {error.details && (
+                <p className="text-red-700 text-sm mt-2 font-mono bg-red-100/50 p-2 rounded-lg break-all">
+                  {error.details}
+                </p>
+              )}
+              {error.suggestion && (
+                <div className="mt-4 flex items-center gap-2 text-red-600 text-sm font-medium">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                   {error.suggestion}
                 </div>
-                <button onClick={() => setError(null)} className="pt-4 text-zinc-400 hover:text-white text-sm font-bold transition-colors">Dismiss and Retry</button>
-              </div>
+              )}
+              <button
+                onClick={() => setError(null)}
+                className="mt-6 text-sm font-semibold text-red-800 hover:text-red-900 underline underline-offset-4"
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         )}
 
         {!loading && !error && !data && (
-          <div className="flex flex-col items-center justify-center py-48 text-center">
-            <div className="w-32 h-32 bg-white/5 rounded-[40px] flex items-center justify-center mb-10 border border-white/10 shadow-2xl relative group">
-              <div className="absolute inset-0 bg-indigo-500/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-              <BarChart3 className="text-zinc-600 group-hover:text-indigo-400 transition-colors relative" size={64} />
+          <div className="text-center py-20">
+            <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Search className="text-indigo-500" size={32} />
             </div>
-            <h2 className="text-5xl font-black text-white tracking-tighter mb-6">Social Intelligence.</h2>
-            <p className="text-zinc-500 text-lg max-w-lg leading-relaxed mx-auto">
-              Institutional-grade analytics and AI-driven content strategies for any public Instagram profile.
-            </p>
+            <h2 className="text-xl font-medium text-gray-900">Ready to analyze</h2>
+            <p className="text-gray-500 mt-2">Enter an Instagram username above to get AI-powered insights.</p>
           </div>
         )}
 
-        {data && metrics && (
-          <div className="space-y-12 animate-in fade-in slide-in-from-bottom-12 duration-1000">
-            {/* Tab Switcher */}
-            <div className="flex items-center justify-center">
-              <div className="flex bg-white/5 border border-white/10 p-1.5 rounded-2xl backdrop-blur-xl shadow-2xl shadow-indigo-500/5">
-                {[
-                  { id: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={18} /> },
-                  { id: 'strategy', label: 'AI Strategy', icon: <Sparkles size={18} /> },
-                  { id: 'feed', label: 'Content Feed', icon: <PlaySquare size={18} /> }
-                ].map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`relative px-8 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 z-10 ${activeTab === tab.id ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                  >
-                    {activeTab === tab.id && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute inset-0 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-600/30 -z-10"
-                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                      />
-                    )}
-                    {tab.icon}
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+        {data && data.posts && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Tab Navigation */}
+            <div className="flex p-1 bg-gray-100 rounded-2xl w-fit mx-auto sm:mx-0">
+              <button
+                onClick={() => setActiveTab('actions')}
+                className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'actions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Next Best Actions
+              </button>
+              <button
+                onClick={() => setActiveTab('performance')}
+                className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeTab === 'performance' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                Performance Analysis
+              </button>
             </div>
 
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-              >
-                {/* DASHBOARD TAB: Combined Metrics + Analytics */}
-                {activeTab === 'dashboard' && (
-                  <div className="space-y-8">
-                    {/* Hero Stats */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                      <HeroCard
-                        label="Engagement Rate"
-                        value={`${metrics.engagementRate}%`}
-                        trend="+12.4%"
-                        icon={<Zap size={24} className="text-amber-400" />}
-                        color="from-amber-500/10 to-transparent"
-                        borderColor="border-amber-500/20"
-                      />
-                      <HeroCard
-                        label="Growth Index"
-                        value={metrics.growthScore}
-                        trend="Optimal"
-                        icon={<TrendingUp size={24} className="text-emerald-400" />}
-                        color="from-emerald-500/10 to-transparent"
-                        borderColor="border-emerald-500/20"
-                      />
-                      <HeroCard
-                        label="Viral Probability"
-                        value={`${metrics.viralProb}%`}
-                        trend="High"
-                        icon={<Sparkles size={24} className="text-indigo-400" />}
-                        color="from-indigo-500/10 to-transparent"
-                        borderColor="border-indigo-500/20"
-                      />
-                      <HeroCard
-                        label="Post Velocity"
-                        value={metrics.totalPosts}
-                        trend="Consistent"
-                        icon={<Timer size={24} className="text-purple-400" />}
-                        color="from-purple-500/10 to-transparent"
-                        borderColor="border-purple-500/20"
-                      />
+            {activeTab === 'actions' ? (
+              <div className="space-y-6">
+                <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                  <div>
+                    <h2 className="text-3xl font-black text-gray-900 tracking-tight">
+                      Good Evening, {data.profile?.fullName || data.profile?.username || 'Content Creator'}
+                    </h2>
+                    <p className="text-gray-500 font-bold mt-1 flex items-center gap-2">
+                      <Sparkles size={16} className="text-indigo-400" />
+                      Your Next Best Actions
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white p-2 px-4 rounded-2xl border border-gray-100 shadow-sm">
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase leading-none">Following Growth</p>
+                      <p className="text-sm font-black text-emerald-600">{data.profile?.followersCount?.toLocaleString()} Followers</p>
+                    </div>
+                    {data.profile?.profilePicUrl && (
+                      <img src={data.profile.profilePicUrl} alt="Avatar" className="w-10 h-10 rounded-xl object-cover border-2 border-indigo-50" referrerPolicy="no-referrer" />
+                    )}
+                  </div>
+                </header>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {data.actionCards.map((card) => (
+                    <ActionCard
+                      key={card.id}
+                      card={card}
+                      onAction={(c) => console.log("Create post for:", c)}
+                      onSave={(c) => console.log("Save card:", c)}
+                      onDismiss={(id) => {
+                        setData({
+                          ...data,
+                          actionCards: data.actionCards.filter(c => c.id !== id)
+                        });
+                      }}
+                    />
+                  ))}
+                </div>
+
+                <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm">
+                  <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    <TrendingUp className="text-indigo-600" size={24} />
+                    Executive Summary
+                  </h3>
+                  <div className="prose prose-indigo max-w-none prose-p:text-gray-600">
+                    <Markdown>{data.insights}</Markdown>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* Overview Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <StatCard
+                    icon={<Heart className="text-rose-500" size={24} />}
+                    label="Avg. Likes"
+                    value={getAverages(data.posts).likes.toLocaleString()}
+                    bgColor="bg-rose-50"
+                  />
+                  <StatCard
+                    icon={<MessageCircle className="text-blue-500" size={24} />}
+                    label="Avg. Comments"
+                    value={getAverages(data.posts).comments.toLocaleString()}
+                    bgColor="bg-blue-50"
+                  />
+                  <StatCard
+                    icon={<PlaySquare className="text-purple-500" size={24} />}
+                    label="Avg. Views (Reels)"
+                    value={getAverages(data.posts).views.toLocaleString()}
+                    bgColor="bg-purple-50"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Charts Section */}
+                  <div className="lg:col-span-2 space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
+                        <h4 className="text-emerald-800 font-bold mb-4 flex items-center gap-2">
+                          <TrendingUp size={18} /> Best Performing Post
+                        </h4>
+                        {data.posts.length > 0 && (() => {
+                          const best = [...data.posts].sort((a, b) => (b.likesCount || 0) - (a.likesCount || 0))[0];
+                          return (
+                            <div className="flex gap-4">
+                              <div className="w-20 h-20 rounded-xl overflow-hidden bg-white shrink-0 border border-emerald-100 shadow-sm">
+                                <img src={best.displayUrl} alt="Best" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              </div>
+                              <div>
+                                <p className="text-2xl font-black text-emerald-700">{best.likesCount?.toLocaleString()} Likes</p>
+                                <p className="text-sm text-emerald-600 line-clamp-2 mt-1">{best.caption}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100">
+                        <h4 className="text-rose-800 font-bold mb-4 flex items-center gap-2">
+                          <AlertCircle size={18} /> Needs Improvement
+                        </h4>
+                        {data.posts.length > 0 && (() => {
+                          const worst = [...data.posts].sort((a, b) => (a.likesCount || 0) - (b.likesCount || 0))[0];
+                          return (
+                            <div className="flex gap-4">
+                              <div className="w-20 h-20 rounded-xl overflow-hidden bg-white shrink-0 border border-rose-100 shadow-sm">
+                                {worst.displayUrl ? (
+                                  <img src={worst.displayUrl} alt="Worst" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50">
+                                    <ImageIcon size={24} />
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-2xl font-black text-rose-700">{worst.likesCount?.toLocaleString()} Likes</p>
+                                <p className="text-sm text-rose-600 line-clamp-2 mt-1">{worst.caption}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
 
-                    {/* Performance Breakdown */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                      <div className="lg:col-span-2 space-y-8">
-                        {/* Area Chart */}
-                        <div className="bg-white/5 border border-white/10 rounded-[32px] p-10 backdrop-blur-xl relative overflow-hidden">
-                          <div className="flex items-center justify-between mb-10">
-                            <div className="space-y-1">
-                              <h3 className="text-xl font-black text-white flex items-center gap-3">
-                                <BarChart3 size={24} className="text-indigo-500" />
-                                Engagement Performance
-                              </h3>
-                              <p className="text-xs text-zinc-500 font-medium">Historical data from last {data.posts.length} posts</p>
-                            </div>
-                          </div>
-                          <div className="h-72">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <AreaChart data={data.posts.slice().reverse().map((p: any, i: number) => ({ name: i, val: p.likesCount || 0 }))}>
-                                <defs>
-                                  <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                                  </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff03" />
-                                <XAxis hide />
-                                <YAxis hide />
-                                <Tooltip
-                                  contentStyle={{ backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '12px' }}
-                                  itemStyle={{ color: '#fff' }}
-                                  labelStyle={{ display: 'none' }}
-                                />
-                                <Area type="monotone" dataKey="val" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorVal)" />
-                              </AreaChart>
-                            </ResponsiveContainer>
-                          </div>
-                        </div>
-
-                        {/* Secondary metrics grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          <MetricCard label="Avg. Likes" value={metrics.avgLikes.toLocaleString()} icon={<Heart size={18} />} />
-                          <MetricCard label="Avg. Views" value={metrics.avgViews.toLocaleString()} icon={<PlaySquare size={18} />} />
-                          <MetricCard label="Best Time" value={metrics.bestPostingTime} icon={<Clock size={18} />} />
-                          <MetricCard label="Best Duration" value={metrics.bestReelDuration} icon={<Timer size={18} />} />
-                        </div>
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                      <h3 className="text-lg font-semibold mb-6">Engagement Trends (Recent Posts)</h3>
+                      <div className="h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={processChartData(data.posts)}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                            <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} dy={10} />
+                            <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} dx={-10} />
+                            <Tooltip
+                              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
+                              cursor={{ stroke: '#f0f0f0', strokeWidth: 2 }}
+                            />
+                            <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
+                            <Line yAxisId="left" type="monotone" dataKey="likes" name="Likes" stroke="#f43f5e" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                            <Line yAxisId="left" type="monotone" dataKey="comments" name="Comments" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
                       </div>
+                    </div>
 
-                      {/* Best Content Block */}
-                      <div className="space-y-6">
-                        <div className="bg-white/5 border border-white/10 rounded-[32px] p-8 backdrop-blur-xl h-full flex flex-col">
-                          <h3 className="text-xl font-black text-white mb-6">Top Performer</h3>
-                          <div className="flex-1 rounded-2xl overflow-hidden relative mb-6 min-h-[200px] border border-white/5 group">
-                            {metrics.bestPost?.displayUrl && (
-                              <img
-                                src={metrics.bestPost.displayUrl}
-                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
-                                referrerPolicy="no-referrer"
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                              />
+                    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                      <h3 className="text-lg font-semibold mb-6">Recent Posts Preview</h3>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                        {data.posts.slice(0, 8).map((post: any, i: number) => (
+                          <div key={i} className="group relative aspect-square bg-gray-100 rounded-2xl overflow-hidden">
+                            {post.displayUrl ? (
+                              <img src={post.displayUrl} alt="Post preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                {post.type === 'Video' ? <PlaySquare size={32} /> : <ImageIcon size={32} />}
+                              </div>
                             )}
-                            <div className="absolute inset-x-0 bottom-0 p-6 bg-gradient-to-t from-black/80 to-transparent">
-                              <div className="flex items-center gap-4 text-white font-black">
-                                <span className="flex items-center gap-1.5"><Heart size={16} className="text-rose-500" /> {metrics.bestPost?.likesCount?.toLocaleString()}</span>
-                                <span className="flex items-center gap-1.5"><MessageCircle size={16} className="text-blue-500" /> {metrics.bestPost?.commentsCount?.toLocaleString()}</span>
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white gap-2">
+                              <div className="flex items-center gap-1.5 text-sm font-medium"><Heart size={16} /> {post.likesCount}</div>
+                              <div className="flex items-center gap-1.5 text-sm font-medium"><MessageCircle size={16} /> {post.commentsCount}</div>
+                            </div>
+                            {post.type === 'Video' && (
+                              <div className="absolute top-2 right-2 bg-black/50 p-1.5 rounded-full text-white backdrop-blur-sm">
+                                <PlaySquare size={14} />
                               </div>
-                            </div>
+                            )}
                           </div>
-                          <div className="space-y-4">
-                            <p className="text-xs text-zinc-500 font-medium line-clamp-2">{metrics.bestPost?.caption}</p>
-                            <div className="flex flex-wrap gap-2">
-                              {(metrics.bestPost?.hashtags || []).slice(0, 3).map((h: string) => (
-                                <span key={h} className="text-[10px] bg-white/5 px-2.5 py-1 rounded-lg text-indigo-400 font-bold border border-white/5">#{h}</span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
+                        ))}
                       </div>
                     </div>
                   </div>
-                )}
 
-                {/* STRATEGY TAB */}
-                {activeTab === 'strategy' && (
-                  <div className="max-w-5xl mx-auto space-y-12">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="bg-white/5 border border-white/10 rounded-[40px] p-10 backdrop-blur-xl">
-                        <div className="w-14 h-14 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-10 border border-amber-500/20">
-                          <Lightbulb size={28} className="text-amber-400" />
-                        </div>
-                        <h3 className="text-2xl font-black text-white mb-8">Growth Roadmap</h3>
-                        <ul className="space-y-6">
-                          {(data.insights?.advanced_analysis?.growth_opportunities || [
-                            "Maintain consistent posting schedule during peak hours.",
-                            "Increase focus on shared Reels to trigger discovery.",
-                            "Optimize hashtags for niche engagement."
-                          ]).map((opt: string, i: number) => (
-                            <motion.li initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }} key={i} className="flex gap-4 group">
-                              <div className="w-6 h-6 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-[10px] font-black text-indigo-400 shrink-0 group-hover:bg-indigo-500 group-hover:text-white transition-all">
-                                {i + 1}
-                              </div>
-                              <p className="text-zinc-400 text-sm leading-relaxed group-hover:text-zinc-200 transition-colors">{opt}</p>
-                            </motion.li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="space-y-8">
-                        <div className="bg-white/5 border border-white/10 rounded-[40px] p-10 backdrop-blur-xl">
-                          <h4 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500 mb-10 flex items-center gap-3">
-                            <Sparkles size={18} className="text-indigo-500" />
-                            Content Blueprint
-                          </h4>
-                          <div className="space-y-6">
-                            {(data.insights?.reel_suggestions || [
-                              { title: "Educational Insight", hook: "Did you know that viral content usually starts with...", hashtags: ["strategy", "growth"] },
-                              { title: "Behind the Scenes", hook: "Let's take a look at how we build these...", hashtags: ["process", "inside"] }
-                            ]).map((reel: any, i: number) => (
-                              <div key={i} className="p-6 bg-white/5 rounded-[28px] border border-white/5 hover:border-indigo-500/30 transition-all group cursor-default">
-                                <h5 className="font-bold text-white text-base mb-2 group-hover:text-indigo-400 transition-colors">{reel.title}</h5>
-                                <p className="text-sm text-zinc-500 italic mb-4 leading-relaxed">"{reel.hook}"</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {reel.hashtags?.map((h: string) => (
-                                    <span key={h} className="text-[10px] font-black px-2.5 py-1 bg-indigo-500/10 text-indigo-400 rounded-lg">#{h}</span>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="bg-gradient-to-br from-indigo-600 to-purple-800 rounded-[40px] p-10 text-white shadow-3xl shadow-indigo-600/20 relative overflow-hidden group">
-                          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-125 transition-transform duration-1000">
-                            <Share2 size={120} />
-                          </div>
-                          <h4 className="text-3xl font-black tracking-tighter mb-4 relative">Neural Report</h4>
-                          <p className="text-white/70 text-sm leading-relaxed mb-8 relative">
-                            {data.aiUsed ? "Our Llama-3.3-70B model has analyzed your content velocity and engagement patterns." : "The AI model is currently offline. Basic dashboard insights are active."}
-                          </p>
-                          <button className="w-full py-4 bg-white text-indigo-700 rounded-2xl text-sm font-black hover:scale-[1.02] transition-all active:scale-95 shadow-xl relative">
-                            Generate Campaign PDF
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* FEED TAB */}
-                {activeTab === 'feed' && (
-                  <section className="space-y-8">
-                    <div className="flex items-center justify-between px-2">
-                      <h3 className="text-2xl font-black text-white px-2">Content Inventory</h3>
-                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest bg-white/5 px-4 py-2 rounded-full border border-white/5">{data.posts.length} Items</span>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                      {data.posts.map((post: any, i: number) => (
-                        <FeedItem key={i} post={post} index={i} />
-                      ))}
-                    </div>
-                  </section>
-                )}
-              </motion.div>
-            </AnimatePresence>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
-    </div >
-  );
-}
-
-function FeedItem({ post, index }: { post: any, index: number }) {
-  const [isBroken, setIsBroken] = React.useState(false);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: index * 0.05 }}
-      className="aspect-[3/4] rounded-[32px] overflow-hidden relative group border border-white/10 bg-zinc-900 shadow-xl"
-    >
-      {!isBroken && post.displayUrl ? (
-        <img
-          src={post.displayUrl}
-          className="w-full h-full object-cover grayscale-[0.2] group-hover:grayscale-0 transition-all duration-700 group-hover:scale-110"
-          referrerPolicy="no-referrer"
-          crossOrigin="anonymous"
-          onError={() => setIsBroken(true)}
-        />
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center text-zinc-800 bg-zinc-900/50 gap-2">
-          <ImageIcon size={48} className="opacity-10" />
-          <span className="text-[10px] font-black uppercase tracking-tighter opacity-20">Media Unavailable</span>
-        </div>
-      )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-end p-6 z-20">
-        <div className="flex items-center justify-between text-sm font-black text-white">
-          <span className="flex items-center gap-2"><Heart size={16} className="text-rose-500" /> {post.likesCount?.toLocaleString() || 0}</span>
-          <span className="flex items-center gap-2"><MessageCircle size={16} className="text-blue-500" /> {post.commentsCount?.toLocaleString() || 0}</span>
-        </div>
-      </div>
-      {post.type === 'Video' && (
-        <div className="absolute top-4 right-4 w-9 h-9 bg-black/40 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/10 z-10">
-          <PlaySquare size={18} className="text-white" />
-        </div>
-      )}
-    </motion.div>
-  );
-}
-
-function HeroCard({ label, value, trend, icon, color, borderColor }: { label: string, value: string | number, trend: string, icon: React.ReactNode, color: string, borderColor: string }) {
-  return (
-    <div className={`bg-gradient-to-br ${color} ${borderColor} border rounded-[32px] p-8 backdrop-blur-xl relative overflow-hidden group hover:scale-[1.02] transition-all duration-500`}>
-      <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity group-hover:scale-110 transition-transform duration-700">
-        {icon}
-      </div>
-      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-3">{label}</p>
-      <div className="flex items-baseline gap-4">
-        <h3 className="text-5xl font-black text-white tracking-tighter">{value}</h3>
-        <div className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full ${trend === 'Optimal' || trend.startsWith('+') ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-500/10 text-zinc-400'}`}>
-          {trend}
-        </div>
-      </div>
     </div>
   );
 }
 
-function MetricCard({ label, value, icon, delay = 0 }: { label: string, value: string | number, icon: React.ReactNode, delay?: number }) {
+function StatCard({ icon, label, value, bgColor }: { icon: React.ReactNode, label: string, value: string | number, bgColor: string }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.5 }}
-      className="bg-white/5 border border-white/10 rounded-[24px] p-6 backdrop-blur-md hover:bg-white/[0.08] transition-all group cursor-default relative overflow-hidden"
-    >
-      <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex items-center gap-4">
+      <div className={`w-14 h-14 ${bgColor} rounded-2xl flex items-center justify-center shrink-0`}>
         {icon}
       </div>
-      <div className="flex items-center gap-4 mb-4">
-        <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-zinc-500 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all border border-white/5">
-          {icon}
-        </div>
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</p>
+      <div>
+        <p className="text-gray-500 text-sm font-medium">{label}</p>
+        <p className="text-2xl font-semibold text-gray-900 mt-0.5">{value}</p>
       </div>
-      <p className="text-2xl font-black text-white tracking-tight">{value}</p>
-    </motion.div>
+    </div>
   );
 }
