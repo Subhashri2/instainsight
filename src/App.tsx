@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Loader2, TrendingUp, Heart, MessageCircle, PlaySquare, Image as ImageIcon, AlertCircle, Zap, BarChart3, Clock, Timer, Sparkles, Hash, Lightbulb, ArrowUpRight, Share2 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { Search, Loader2, TrendingUp, Heart, MessageCircle, PlaySquare, Image as ImageIcon, AlertCircle, Zap, BarChart3, Clock, Timer, Sparkles, Hash, Lightbulb, ArrowUpRight, Share2, Layout } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 import Markdown from 'react-markdown';
 import { format } from 'date-fns';
 import { GoogleGenAI } from "@google/genai";
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function App() {
   const [username, setUsername] = useState('');
@@ -11,6 +12,7 @@ export default function App() {
   const [loadingStage, setLoadingStage] = useState('');
   const [error, setError] = useState<{ message: string; details?: string; suggestion?: string } | null>(null);
   const [data, setData] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'analytics' | 'insights' | 'feed' | 'metrics'>('insights');
 
   // Sync with URL query parameter on mount
   React.useEffect(() => {
@@ -68,7 +70,7 @@ export default function App() {
       }
 
       setLoadingStage('Generating AI insights...');
-      const prompt = `Analyze the following recent Instagram Reels/Posts for @${username} and provide a high-end strategic analysis.
+      const prompt = `Analyze the following recent Instagram Reels/Posts for @${targetUsername} and provide a high-end strategic analysis.
       
       Data Summary: ${JSON.stringify(result.summaryData)}
       
@@ -112,6 +114,7 @@ export default function App() {
         ...result,
         insights: aiResponse.text
       });
+      setActiveTab('insights'); // Default to insights after search
     } catch (err: any) {
       console.error("Analysis error:", err);
       setError({
@@ -160,10 +163,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#020203] text-zinc-200 font-sans selection:bg-indigo-500/30 selection:text-white">
-      {/* Background Glows */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/10 blur-[120px] rounded-full" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 blur-[120px] rounded-full" />
+      {/* Playful Background Elements */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.2, 1],
+            rotate: [0, 90, 0],
+            x: [0, 100, 0],
+            y: [0, 50, 0]
+          }}
+          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+          className="absolute -top-24 -left-24 w-96 h-96 bg-indigo-600/10 blur-[120px] rounded-full"
+        />
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.5, 1],
+            rotate: [0, -90, 0],
+            x: [0, -100, 0],
+            y: [0, -50, 0]
+          }}
+          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+          className="absolute -bottom-24 -right-24 w-[500px] h-[500px] bg-purple-600/10 blur-[150px] rounded-full"
+        />
       </div>
 
       <header className="sticky top-0 z-50 border-b border-white/5 bg-black/40 backdrop-blur-2xl">
@@ -266,176 +287,251 @@ export default function App() {
 
         {data && metrics && (
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-12 duration-1000">
-            
-            {/* TOP SECTION: Hero Metrics */}
-            <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              <HeroCard 
-                label="Engagement Rate" 
-                value={`${metrics.engagementRate}%`} 
-                trend="+12.4%" 
-                icon={<Zap size={24} className="text-amber-400" />}
-                color="from-amber-500/10 to-transparent"
-                borderColor="border-amber-500/20"
-              />
-              <HeroCard 
-                label="Growth Score" 
-                value={metrics.growthScore} 
-                trend="Optimal" 
-                icon={<TrendingUp size={24} className="text-emerald-400" />}
-                color="from-emerald-500/10 to-transparent"
-                borderColor="border-emerald-500/20"
-              />
-              <HeroCard 
-                label="Viral Probability" 
-                value={`${metrics.viralProb}%`} 
-                trend="High" 
-                icon={<Sparkles size={24} className="text-indigo-400" />}
-                color="from-indigo-500/10 to-transparent"
-                borderColor="border-indigo-500/20"
-              />
-              <div className="bg-white/5 border border-white/10 rounded-[32px] p-1 overflow-hidden relative group cursor-pointer">
-                {metrics.bestPost?.displayUrl ? (
-                  <img src={metrics.bestPost.displayUrl} className="w-full h-full object-cover rounded-[28px] opacity-30 group-hover:opacity-50 transition-all duration-700 group-hover:scale-110" referrerPolicy="no-referrer" />
-                ) : (
-                  <div className="w-full h-full bg-zinc-900 rounded-[28px]" />
+            {/* Tab Switcher */}
+            <div className="flex items-center justify-center">
+              <div className="flex bg-white/5 border border-white/10 p-1.5 rounded-2xl backdrop-blur-xl shadow-2xl shadow-indigo-500/5">
+                {[
+                  { id: 'insights', label: 'Insights', icon: <Lightbulb size={18} /> },
+                  { id: 'metrics', label: 'Metrics', icon: <Layout size={18} /> },
+                  { id: 'analytics', label: 'Analytics', icon: <BarChart3 size={18} /> },
+                  { id: 'feed', label: 'Feed', icon: <PlaySquare size={18} /> }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`relative px-8 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 z-10 ${activeTab === tab.id ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  >
+                    {activeTab === tab.id && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute inset-0 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-600/30 -z-10"
+                        transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                      />
+                    )}
+                    {tab.icon}
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
+              >
+                {/* METRICS TAB: Simple Clean Cards */}
+                {activeTab === 'metrics' && (
+                  <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                    <MetricCard label="Total Posts" value={metrics.totalPosts} icon={<ImageIcon size={18} />} delay={0} />
+                    <MetricCard label="Avg. Likes" value={metrics.avgLikes.toLocaleString()} icon={<Heart size={18} />} delay={0.1} />
+                    <MetricCard label="Avg. Views" value={metrics.avgViews.toLocaleString()} icon={<PlaySquare size={18} />} delay={0.2} />
+                    <MetricCard label="Best Time" value={metrics.bestPostingTime} icon={<Clock size={18} />} delay={0.3} />
+                    <MetricCard label="Reel Duration" value={metrics.bestReelDuration} icon={<Timer size={18} />} delay={0.4} />
+                  </section>
                 )}
-                <div className="absolute inset-0 p-8 flex flex-col justify-end bg-gradient-to-t from-black/80 via-transparent to-transparent">
-                  <p className="text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500 mb-2">Top Performance</p>
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2 text-lg font-black text-white"><Heart size={18} className="text-rose-500" /> {metrics.bestPost?.likesCount?.toLocaleString()}</div>
-                    <div className="flex items-center gap-2 text-lg font-black text-white"><MessageCircle size={18} className="text-blue-500" /> {metrics.bestPost?.commentsCount?.toLocaleString()}</div>
-                  </div>
-                </div>
-                <div className="absolute top-6 right-6 w-10 h-10 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ArrowUpRight size={20} className="text-white" />
-                </div>
-              </div>
-            </section>
 
-            {/* MIDDLE SECTION: Simple Clean Cards */}
-            <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-              <MetricCard label="Total Posts" value={metrics.totalPosts} icon={<ImageIcon size={18} />} />
-              <MetricCard label="Avg. Likes" value={metrics.avgLikes.toLocaleString()} icon={<Heart size={18} />} />
-              <MetricCard label="Avg. Views" value={metrics.avgViews.toLocaleString()} icon={<PlaySquare size={18} />} />
-              <MetricCard label="Best Time" value={metrics.bestPostingTime} icon={<Clock size={18} />} />
-              <MetricCard label="Reel Duration" value={metrics.bestReelDuration} icon={<Timer size={18} />} />
-            </section>
-
-            {/* BOTTOM SECTION: Advanced Insights */}
-            <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-8">
-                {/* Chart Card */}
-                <div className="bg-white/5 border border-white/10 rounded-[32px] p-10 backdrop-blur-xl relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2" />
-                  <div className="flex items-center justify-between mb-10 relative">
-                    <div className="space-y-1">
-                      <h3 className="text-xl font-black text-white flex items-center gap-3">
-                        <BarChart3 size={24} className="text-indigo-500" />
-                        Engagement Velocity
-                      </h3>
-                      <p className="text-xs text-zinc-500 font-medium">Historical performance tracking over last 20 posts</p>
-                    </div>
-                    <div className="px-4 py-2 bg-white/5 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                      Real-time Data
-                    </div>
-                  </div>
-                  <div className="h-72 relative">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={data.posts.slice().reverse().map((p: any, i: number) => ({ name: i, val: p.likesCount || 0 }))}>
-                        <defs>
-                          <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff03" />
-                        <XAxis hide />
-                        <YAxis hide />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '12px' }}
-                          itemStyle={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
-                          labelStyle={{ display: 'none' }}
-                          cursor={{ stroke: '#6366f1', strokeWidth: 2, strokeDasharray: '5 5' }}
-                        />
-                        <Area type="monotone" dataKey="val" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorVal)" animationDuration={2000} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* AI Insights Content */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="bg-white/5 border border-white/10 rounded-[32px] p-10 backdrop-blur-xl relative group">
-                    <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-8 border border-amber-500/20">
-                      <Lightbulb size={24} className="text-amber-400" />
-                    </div>
-                    <div className="prose prose-invert prose-sm max-w-none prose-p:text-zinc-400 prose-headings:text-white prose-headings:font-black prose-headings:tracking-tight prose-li:text-zinc-400 prose-strong:text-indigo-400">
-                      <Markdown>{data.insights}</Markdown>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-8">
-                    <div className="bg-white/5 border border-white/10 rounded-[32px] p-10 backdrop-blur-xl">
-                      <h4 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500 mb-8 flex items-center gap-3">
-                        <Hash size={18} className="text-indigo-500" />
-                        Algorithm Tags
-                      </h4>
-                      <div className="flex flex-wrap gap-2.5">
-                        {['#viral', '#growth', '#instagram', '#contentcreator', '#reels', '#strategy', '#analytics', '#cortex', '#socialmedia'].map(tag => (
-                          <span key={tag} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-zinc-400 hover:text-white hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all cursor-pointer">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    <div className="bg-gradient-to-br from-indigo-600 to-purple-800 rounded-[32px] p-10 text-white shadow-2xl shadow-indigo-500/20 relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-125 transition-transform duration-1000">
-                        <Share2 size={120} />
-                      </div>
-                      <h4 className="text-2xl font-black tracking-tight mb-4 relative">Scale Your Reach.</h4>
-                      <p className="text-white/70 text-sm leading-relaxed mb-8 relative">Our neural engine suggests a 15% increase in Reel frequency to trigger the explore page algorithm.</p>
-                      <button className="w-full py-4 bg-white text-indigo-700 rounded-2xl text-sm font-black hover:scale-[1.02] transition-all active:scale-95 shadow-xl relative">
-                        Download Strategy PDF
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Sidebar: Recent Content Feed */}
-              <div className="space-y-8">
-                <div className="flex items-center justify-between px-2">
-                  <h3 className="text-xl font-black text-white">Content Feed</h3>
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Latest 10</span>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  {data.posts.slice(0, 10).map((post: any, i: number) => (
-                    <div key={i} className="aspect-[3/4] rounded-[24px] overflow-hidden relative group border border-white/10 bg-zinc-900">
-                      {post.displayUrl ? (
-                        <img src={post.displayUrl} className="w-full h-full object-cover grayscale-[0.3] group-hover:grayscale-0 transition-all duration-700 group-hover:scale-110" referrerPolicy="no-referrer" />
+                {/* ANALYTICS TAB: Hero Metrics */}
+                {activeTab === 'analytics' && (
+                  <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <HeroCard 
+                      label="Engagement Rate" 
+                      value={`${metrics.engagementRate}%`} 
+                      trend="+12.4%" 
+                      icon={<Zap size={24} className="text-amber-400" />}
+                      color="from-amber-500/10 to-transparent"
+                      borderColor="border-amber-500/20"
+                    />
+                    <HeroCard 
+                      label="Growth Score" 
+                      value={metrics.growthScore} 
+                      trend="Optimal" 
+                      icon={<TrendingUp size={24} className="text-emerald-400" />}
+                      color="from-emerald-500/10 to-transparent"
+                      borderColor="border-emerald-500/20"
+                    />
+                    <HeroCard 
+                      label="Viral Probability" 
+                      value={`${metrics.viralProb}%`} 
+                      trend="High" 
+                      icon={<Sparkles size={24} className="text-indigo-400" />}
+                      color="from-indigo-500/10 to-transparent"
+                      borderColor="border-indigo-500/20"
+                    />
+                    <div className="bg-white/5 border border-white/10 rounded-[32px] p-1 overflow-hidden relative group cursor-pointer">
+                      {metrics.bestPost?.displayUrl ? (
+                        <img src={metrics.bestPost.displayUrl} className="w-full h-full object-cover rounded-[28px] opacity-30 group-hover:opacity-50 transition-all duration-700 group-hover:scale-110" referrerPolicy="no-referrer" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-800">
-                          <PlaySquare size={32} />
-                        </div>
+                        <div className="w-full h-full bg-zinc-900 rounded-[28px]" />
                       )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-end p-4">
-                        <div className="flex items-center justify-between text-[11px] font-black text-white">
-                          <span className="flex items-center gap-1.5"><Heart size={12} className="text-rose-500" /> {post.likesCount?.toLocaleString()}</span>
-                          <span className="flex items-center gap-1.5"><MessageCircle size={12} className="text-blue-500" /> {post.commentsCount?.toLocaleString()}</span>
+                      <div className="absolute inset-0 p-8 flex flex-col justify-end bg-gradient-to-t from-black/80 via-transparent to-transparent">
+                        <p className="text-[10px] uppercase tracking-[0.2em] font-black text-zinc-500 mb-2">Top Performance</p>
+                        <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-2 text-lg font-black text-white"><Heart size={18} className="text-rose-500" /> {metrics.bestPost?.likesCount?.toLocaleString()}</div>
+                          <div className="flex items-center gap-2 text-lg font-black text-white"><MessageCircle size={18} className="text-blue-500" /> {metrics.bestPost?.commentsCount?.toLocaleString()}</div>
                         </div>
                       </div>
-                      {post.type === 'Video' && (
-                        <div className="absolute top-3 right-3 w-7 h-7 bg-black/40 backdrop-blur-md rounded-lg flex items-center justify-center border border-white/10">
-                          <PlaySquare size={14} className="text-white" />
-                        </div>
-                      )}
+                      <div className="absolute top-6 right-6 w-10 h-10 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <ArrowUpRight size={20} className="text-white" />
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </section>
+                  </section>
+                )}
 
+                {/* INSIGHTS TAB */}
+                {activeTab === 'insights' && (
+                  <div className="space-y-12">
+                    {/* BOTTOM SECTION: Advanced Insights */}
+                    <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                      <div className="lg:col-span-2 space-y-8">
+                        {/* Chart Card */}
+                        <div className="bg-white/5 border border-white/10 rounded-[32px] p-10 backdrop-blur-xl relative overflow-hidden group">
+                          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/5 blur-[80px] rounded-full -translate-y-1/2 translate-x-1/2" />
+                          <div className="flex items-center justify-between mb-10 relative">
+                            <div className="space-y-1">
+                              <h3 className="text-xl font-black text-white flex items-center gap-3">
+                                <BarChart3 size={24} className="text-indigo-500" />
+                                Engagement Velocity
+                              </h3>
+                              <p className="text-xs text-zinc-500 font-medium">Historical performance tracking over last 20 posts</p>
+                            </div>
+                            <div className="px-4 py-2 bg-white/5 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                              Real-time Data
+                            </div>
+                          </div>
+                          <div className="h-72 relative">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <AreaChart data={data.posts.slice().reverse().map((p: any, i: number) => ({ name: i, val: p.likesCount || 0 }))}>
+                                <defs>
+                                  <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
+                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff03" />
+                                <XAxis hide />
+                                <YAxis hide />
+                                <Tooltip 
+                                  contentStyle={{ backgroundColor: '#09090b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '12px' }}
+                                  itemStyle={{ color: '#fff', fontSize: '14px', fontWeight: 'bold' }}
+                                  labelStyle={{ display: 'none' }}
+                                  cursor={{ stroke: '#6366f1', strokeWidth: 2, strokeDasharray: '5 5' }}
+                                />
+                                <Legend verticalAlign="top" height={36} iconType="circle" />
+                                <Area name="Engagement (Likes)" type="monotone" dataKey="val" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorVal)" animationDuration={2000} />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        {/* AI Insights Content */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                          <div className="bg-white/5 border border-white/10 rounded-[32px] p-10 backdrop-blur-xl relative group">
+                            <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center mb-8 border border-amber-500/20">
+                              <Lightbulb size={24} className="text-amber-400" />
+                            </div>
+                            <div className="prose prose-invert prose-sm max-w-none prose-p:text-zinc-400 prose-headings:text-white prose-headings:font-black prose-headings:tracking-tight prose-li:text-zinc-400 prose-strong:text-indigo-400">
+                              <Markdown>{data.insights}</Markdown>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-8">
+                            <div className="bg-white/5 border border-white/10 rounded-[32px] p-10 backdrop-blur-xl">
+                              <h4 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500 mb-8 flex items-center gap-3">
+                                <Hash size={18} className="text-indigo-500" />
+                                Algorithm Tags
+                              </h4>
+                              <div className="flex flex-wrap gap-2.5">
+                                {['#viral', '#growth', '#instagram', '#contentcreator', '#reels', '#strategy', '#analytics', '#cortex', '#socialmedia'].map(tag => (
+                                  <span key={tag} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-zinc-400 hover:text-white hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all cursor-pointer">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            <div className="bg-gradient-to-br from-indigo-600 to-purple-800 rounded-[32px] p-10 text-white shadow-2xl shadow-indigo-500/20 relative overflow-hidden group">
+                              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-125 transition-transform duration-1000">
+                                <Share2 size={120} />
+                              </div>
+                              <h4 className="text-2xl font-black tracking-tight mb-4 relative">Scale Your Reach.</h4>
+                              <p className="text-white/70 text-sm leading-relaxed mb-8 relative">Our neural engine suggests a 15% increase in Reel frequency to trigger the explore page algorithm.</p>
+                              <button className="w-full py-4 bg-white text-indigo-700 rounded-2xl text-sm font-black hover:scale-[1.02] transition-all active:scale-95 shadow-xl relative">
+                                Download Strategy PDF
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sidebar for Insights Tab (Summary or secondary info) */}
+                      <div className="space-y-8">
+                        <div className="bg-white/5 border border-white/10 rounded-[32px] p-8 backdrop-blur-xl">
+                          <h3 className="text-xl font-black text-white mb-6">Quick Stats</h3>
+                          <div className="space-y-6">
+                            <div className="flex justify-between items-center">
+                              <span className="text-zinc-500 text-sm font-bold">Engagement</span>
+                              <span className="text-white font-black">{metrics.engagementRate}%</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-zinc-500 text-sm font-bold">Growth</span>
+                              <span className="text-white font-black">{metrics.growthScore}/100</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-zinc-500 text-sm font-bold">Viral Prob.</span>
+                              <span className="text-white font-black">{metrics.viralProb}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                )}
+
+                {/* FEED TAB */}
+                {activeTab === 'feed' && (
+                  <section className="space-y-8">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="text-2xl font-black text-white">Content Feed</h3>
+                      <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Latest 20 Posts</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                      {data.posts.map((post: any, i: number) => (
+                        <motion.div 
+                          key={i} 
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: i * 0.05 }}
+                          className="aspect-[3/4] rounded-[32px] overflow-hidden relative group border border-white/10 bg-zinc-900 shadow-xl"
+                        >
+                          {post.displayUrl ? (
+                            <img src={post.displayUrl} className="w-full h-full object-cover grayscale-[0.3] group-hover:grayscale-0 transition-all duration-700 group-hover:scale-110" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-800">
+                              <PlaySquare size={48} />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-end p-6 z-20">
+                            <div className="flex items-center justify-between text-sm font-black text-white">
+                              <span className="flex items-center gap-2"><Heart size={16} className="text-rose-500" /> {post.likesCount?.toLocaleString() || 0}</span>
+                              <span className="flex items-center gap-2"><MessageCircle size={16} className="text-blue-500" /> {post.commentsCount?.toLocaleString() || 0}</span>
+                            </div>
+                          </div>
+                          {post.type === 'Video' && (
+                            <div className="absolute top-4 right-4 w-9 h-9 bg-black/40 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/10 z-10">
+                              <PlaySquare size={18} className="text-white" />
+                            </div>
+                          )}
+                        </motion.div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </motion.div>
+            </AnimatePresence>
           </div>
         )}
       </main>
@@ -460,9 +556,17 @@ function HeroCard({ label, value, trend, icon, color, borderColor }: { label: st
   );
 }
 
-function MetricCard({ label, value, icon }: { label: string, value: string | number, icon: React.ReactNode }) {
+function MetricCard({ label, value, icon, delay = 0 }: { label: string, value: string | number, icon: React.ReactNode, delay?: number }) {
   return (
-    <div className="bg-white/5 border border-white/10 rounded-[24px] p-6 backdrop-blur-md hover:bg-white/[0.08] transition-all group cursor-default">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.5 }}
+      className="bg-white/5 border border-white/10 rounded-[24px] p-6 backdrop-blur-md hover:bg-white/[0.08] transition-all group cursor-default relative overflow-hidden"
+    >
+      <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+        {icon}
+      </div>
       <div className="flex items-center gap-4 mb-4">
         <div className="w-10 h-10 bg-white/5 rounded-xl flex items-center justify-center text-zinc-500 group-hover:text-indigo-400 group-hover:bg-indigo-500/10 transition-all border border-white/5">
           {icon}
@@ -470,6 +574,6 @@ function MetricCard({ label, value, icon }: { label: string, value: string | num
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">{label}</p>
       </div>
       <p className="text-2xl font-black text-white tracking-tight">{value}</p>
-    </div>
+    </motion.div>
   );
 }

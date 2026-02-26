@@ -71,17 +71,34 @@ async function startServer() {
          });
       }
 
-      const summaryData = filteredPosts.slice(0, 20).map((item: any) => ({
-          type: item.type || item.productType,
-          likes: item.likesCount || item.displayResources?.[0]?.config_width, // Fallback or specific field
-          comments: item.commentsCount,
-          videoViews: item.videoViewCount || item.videoPlayCount,
+      const summaryData = filteredPosts.slice(0, 20).map((item: any) => {
+        // Robust mapping for different possible field names in Instagram actors
+        const likes = item.likesCount ?? item.edge_liked_by?.count ?? item.like_count ?? 0;
+        const comments = item.commentsCount ?? item.edge_media_to_comment?.count ?? item.comment_count ?? 0;
+        const views = item.videoViewCount ?? item.videoPlayCount ?? item.video_view_count ?? 0;
+        
+        return {
+          type: item.type || item.productType || 'Post',
+          likes: likes,
+          comments: comments,
+          videoViews: views,
           timestamp: item.timestamp,
           caption: item.caption ? item.caption.substring(0, 100) : "",
+          displayUrl: item.displayUrl || item.display_url || item.thumbnailUrl,
+        };
+      });
+
+      // Ensure the posts sent to frontend also have these normalized fields
+      const normalizedPosts = filteredPosts.slice(0, 20).map((item: any) => ({
+        ...item,
+        likesCount: item.likesCount ?? item.edge_liked_by?.count ?? item.like_count ?? 0,
+        commentsCount: item.commentsCount ?? item.edge_media_to_comment?.count ?? item.comment_count ?? 0,
+        videoViewCount: item.videoViewCount ?? item.videoPlayCount ?? item.video_view_count ?? 0,
+        displayUrl: item.displayUrl || item.display_url || item.thumbnailUrl,
       }));
 
       res.json({
-          posts: filteredPosts.slice(0, 20),
+          posts: normalizedPosts,
           summaryData: summaryData
       });
 
