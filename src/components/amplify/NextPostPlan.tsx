@@ -23,35 +23,35 @@ export const NextPostPlan: React.FC<NextPostPlanProps> = ({
     onViewStrategy
 }) => {
     return (
-        <div className="glass-card p-8 rounded-2xl flex flex-col h-full relative">
-            <div className="flex justify-between items-start mb-6">
-                <span className="pill-badge bg-primary text-white border-primary/20 scale-110 origin-left">
+        <div className="brutalist-card p-8 flex flex-col h-full !bg-white">
+            <div className="flex justify-between items-start mb-8">
+                <span className="pill-badge !bg-accent !text-black !border-black scale-110 origin-left !shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                     NEXT POST PLAN
                 </span>
-                <Sparkles size={20} className="text-primary/50" />
+                <Sparkles size={24} className="text-black animate-pulse" />
             </div>
 
-            <h3 className="text-2xl font-black text-white mb-2">{title}</h3>
+            <h3 className="text-3xl font-black text-black mb-2 tracking-tighter uppercase">{title}</h3>
 
-            <div className="flex items-center gap-2 text-[10px] font-bold text-primary mb-6">
-                <Clock size={12} />
+            <div className="flex items-center gap-3 text-xs font-black text-black/80 mb-8 uppercase tracking-widest">
+                <Clock size={14} className="text-black" />
                 <span>{time} · {type} {collab && "· Collab"}</span>
             </div>
 
-            <div className="flex-1 bg-deep-navy/40 rounded-xl p-5 border border-white/5 space-y-4 mb-6">
+            <div className="flex-1 bg-white border-4 border-black p-6 space-y-6 mb-8 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
                 <div>
-                    <span className="label-tiny block mb-1">HOOK</span>
-                    <p className="text-sm italic text-white/90 leading-relaxed font-medium">"{hook}"</p>
+                    <span className="brutalist-label block mb-2">HOOK</span>
+                    <p className="text-sm italic text-black leading-relaxed font-black">"{hook}"</p>
                 </div>
-                <div>
-                    <span className="label-tiny block mb-1">CAPTION</span>
-                    <p className="text-[12px] text-white/50 leading-relaxed line-clamp-2">{caption}</p>
+                <div className="border-t-2 border-black/10 pt-4">
+                    <span className="brutalist-label block mb-2">CAPTION</span>
+                    <p className="text-xs text-black/70 leading-relaxed font-bold line-clamp-3">{caption}</p>
                 </div>
-                <div>
-                    <span className="label-tiny block mb-2">HASHTAGS</span>
+                <div className="border-t-2 border-black/10 pt-4">
+                    <span className="brutalist-label block mb-3">HASHTAGS</span>
                     <div className="flex flex-wrap gap-2">
                         {hashtags.map((tag, i) => (
-                            <span key={i} className="px-2 py-0.5 rounded-lg bg-primary/10 text-primary text-[10px] font-bold border border-primary/20">
+                            <span key={i} className="pill-badge !text-[9px] !bg-black !text-white !border-black">
                                 #{tag}
                             </span>
                         ))}
@@ -61,10 +61,11 @@ export const NextPostPlan: React.FC<NextPostPlanProps> = ({
 
             <button
                 onClick={onViewStrategy}
-                className="w-full py-3 bg-gradient-to-r from-primary to-primary/80 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:shadow-[0_0_20px_rgba(124,58,237,0.4)] transition-all active:scale-95"
+                className="brutalist-button !w-full !bg-black !text-white hover:!bg-accent hover:!text-black"
             >
                 VIEW FULL STRATEGY
             </button>
         </div>
     );
 };
+
