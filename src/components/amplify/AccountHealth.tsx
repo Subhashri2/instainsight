@@ -21,68 +21,41 @@ export const AccountHealth: React.FC<AccountHealthProps> = ({
         { label: "Content Mix", value: 78 }
     ]
 }) => {
-    const radius = 50;
-    const circumference = 2 * Math.PI * radius;
-    // Arc is half circle (or 180 deg)
-    const arcLength = circumference / 2;
-    const strokeDashoffset = arcLength - (score / 100) * arcLength;
-
     return (
-        <div className="glass-card p-8 rounded-2xl flex flex-col items-center h-full">
-            <div className="relative w-48 h-32 mb-4">
-                <svg className="w-full h-full" viewBox="0 0 120 70">
-                    {/* Background track */}
-                    <path
-                        d="M10,60 A50,50 0 0,1 110,60"
-                        fill="none"
-                        stroke="rgba(255,255,255,0.05)"
-                        strokeWidth="8"
-                        strokeLinecap="round"
-                    />
-                    {/* Active arc */}
-                    <motion.path
-                        d="M10,60 A50,50 0 0,1 110,60"
-                        fill="none"
-                        stroke="url(#healthGradient)"
-                        strokeWidth="8"
-                        strokeLinecap="round"
-                        strokeDasharray={arcLength}
-                        initial={{ strokeDashoffset: arcLength }}
-                        animate={{ strokeDashoffset: strokeDashoffset }}
-                        transition={{ duration: 1.5, ease: "easeOut" }}
-                    />
-                    <defs>
-                        <linearGradient id="healthGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor="#7C3AED" />
-                            <stop offset="100%" stopColor="#10B981" />
-                        </linearGradient>
-                    </defs>
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-end pb-2">
-                    <span className="text-4xl font-black text-white">{score}</span>
+        <div className="brutalist-card p-8 flex flex-col items-center h-full !bg-white">
+            <h4 className="text-sm font-black text-black uppercase tracking-widest mb-8 border-b-4 border-black pb-2 w-full text-center">
+                Account Health
+            </h4>
+
+            <div className="relative w-48 h-48 mb-8 border-8 border-black rounded-full flex items-center justify-center bg-accent shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+                <div className="text-center">
+                    <span className="text-6xl font-black text-black tracking-tighter">{score}</span>
+                    <p className="brutalist-label">Score</p>
                 </div>
+                {/* Decorative border elements */}
+                <div className="absolute -top-2 -right-2 w-6 h-6 bg-black rounded-full" />
+                <div className="absolute -bottom-2 -left-2 w-6 h-6 bg-black" />
             </div>
 
-            <div className="w-full space-y-4 mb-6">
+            <div className="w-full space-y-6">
                 {metrics.map((m, i) => (
-                    <div key={i} className="space-y-1">
-                        <div className="flex justify-between text-[10px] font-bold tracking-widest uppercase">
-                            <span className="text-white/40">{m.label}</span>
-                            <span className="text-white">{m.value}%</span>
+                    <div key={i} className="space-y-2">
+                        <div className="flex justify-between text-[11px] font-black tracking-widest uppercase">
+                            <span className="brutalist-label">{m.label}</span>
+                            <span className="text-black">{m.value}%</span>
                         </div>
-                        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className="w-full h-4 bg-white border-2 border-black shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
                             <motion.div
                                 initial={{ width: 0 }}
                                 animate={{ width: `${m.value}%` }}
                                 transition={{ duration: 1, delay: i * 0.1 }}
-                                className="h-full bg-primary"
+                                className="h-full bg-black"
                             />
                         </div>
                     </div>
                 ))}
             </div>
-
-            <h4 className="text-sm font-black text-white uppercase tracking-widest mt-auto">Account Health</h4>
         </div>
     );
 };
+

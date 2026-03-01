@@ -1,3 +1,4 @@
+import React from 'react';
 import { ActionCardData } from '../../types/ActionCard';
 import { Rocket, Clock, Flame, Users, ArrowRight, Zap, TrendingUp, Target } from 'lucide-react';
 
@@ -19,43 +20,44 @@ export const ActionStrip: React.FC<ActionStripProps> = ({ cards = [] }) => {
 
     const getStyles = (type: string) => {
         switch (type) {
-            case 'growth': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-            case 'sales': return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-            case 'engagement': return 'text-purple-400 bg-purple-500/10 border-purple-500/20';
-            case 'opportunity': return 'text-orange-400 bg-orange-500/10 border-orange-500/20';
-            case 'warning': return 'text-red-400 bg-red-500/10 border-red-500/20';
-            default: return 'text-zinc-400 bg-white/5 border-white/10';
+            case 'growth': return 'bg-emerald border-black text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]';
+            case 'sales': return 'bg-blue-500 border-black text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]';
+            case 'engagement': return 'bg-accent border-black text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]';
+            case 'opportunity': return 'bg-orange-500 border-black text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]';
+            case 'warning': return 'bg-red-500 border-black text-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]';
+            default: return 'bg-white border-black text-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]';
         }
     };
 
     if (cards.length === 0) return null;
 
     return (
-        <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide py-3 no-scrollbar">
+        <div className="flex gap-8 overflow-x-auto pb-8 py-4 no-scrollbar">
             {cards.slice(0, 5).map((card) => (
                 <div
                     key={card.id}
-                    className="glass-card min-w-[320px] flex-1 p-6 rounded-2xl flex flex-col justify-between group transition-all duration-300 border border-white/5 hover:border-white/10"
+                    className="brutalist-card min-w-[340px] flex-1 flex flex-col justify-between group !bg-white !p-8"
                 >
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all ${getStyles(card.type)}`}>
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className={`w-12 h-12 border-2 flex items-center justify-center transition-all group-hover:rotate-12 ${getStyles(card.type)}`}>
                             {getIcon(card.type)}
                         </div>
-                        <h4 className="text-sm font-black text-white line-clamp-1">{card.title}</h4>
+                        <h4 className="text-lg font-black text-black leading-none tracking-tighter uppercase line-clamp-1">{card.title}</h4>
                     </div>
 
-                    <p className="text-[12px] text-muted leading-relaxed font-medium mb-4 line-clamp-2">
+                    <p className="text-sm text-black/70 leading-relaxed font-bold mb-6 line-clamp-2">
                         {card.action.primary}
                     </p>
 
-                    <div className="flex justify-between items-center mt-auto">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-white/20 whitespace-nowrap">
+                    <div className="flex justify-between items-center mt-auto pt-4 border-t-2 border-black/5">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-black/40 whitespace-nowrap">
                             Confidence: {card.confidence_score}%
                         </span>
-                        <ArrowRight size={14} className="text-white/20 group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                        <ArrowRight size={20} className="text-black group-hover:translate-x-2 transition-all" />
                     </div>
                 </div>
             ))}
         </div>
     );
 };
+

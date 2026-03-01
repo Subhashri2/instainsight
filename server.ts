@@ -1,9 +1,9 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import { ApifyClient } from 'apify-client';
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
+import { scrapeInstagramProfile } from "./src/scraper.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
@@ -79,11 +79,21 @@ function computeBasicInsights(summaryData: any[], followers: number = 0) {
   const total = summaryData.length;
   if (total === 0) return {};
 
-  const avgLikes = Math.round(summaryData.reduce((s, p) => s + p.like_count, 0) / total);
-  const avgComments = Math.round(summaryData.reduce((s, p) => s + p.comments_count, 0) / total);
-  const avgViews = Math.round(summaryData.reduce((s, p) => s + p.view_count, 0) / total);
+  // ── Aggregates (what the user asked for) ──────────────────────────────────
+  const totalLikes = summaryData.reduce((s, p) => s + (p.like_count || 0), 0);
+  const totalComments = summaryData.reduce((s, p) => s + (p.comments_count || 0), 0);
+  const totalViews = summaryData.reduce((s, p) => s + (p.view_count || 0), 0);
+  const totalInteractions = totalLikes + totalComments;
 
-  // Buyer Intent detection
+  const avgLikes = Math.round(totalLikes / total);
+  const avgComments = Math.round(totalComments / total);
+  const avgViews = Math.round(totalViews / total);
+
+  // Post-type breakdown
+  const videoPosts = summaryData.filter(p => p.type === "Video").length;
+  const imagePosts = total - videoPosts;
+
+  // ── Buyer Intent ───────────────────────────────────────────────────────────
   const BUYER_INTENT_KEYWORDS = ["price", "pp", "cost", "how much", "rate", "available", "dm", "where", "buy", "shop", "whatsapp", "contact", "booking"];
   let totalBuyerIntentComments = 0;
   let totalFilteredComments = 0;
@@ -102,7 +112,9 @@ function computeBasicInsights(summaryData: any[], followers: number = 0) {
     ? Math.round((totalBuyerIntentComments / totalFilteredComments) * 100)
     : 0;
 
-  // Engagement Rate (Follower based if available, else View based)
+  // ── Engagement Rate ────────────────────────────────────────────────────────
+  // Preferred: (avg_likes + avg_comments) / followers * 100
+  // Fallback when no followers: relative to views
   let engRate = "0.00%";
   let rawEngRate = 0;
   if (followers > 0) {
@@ -113,28 +125,27 @@ function computeBasicInsights(summaryData: any[], followers: number = 0) {
     engRate = `${rawEngRate.toFixed(2)}%`;
   }
 
-  // Account Score calculation (Weighted)
-  const engagementScoreFinal = Math.min(100, Math.round(rawEngRate * 10)); // normalized
-  const viewScore = Math.min(100, Math.round(avgViews / 200)); // slightly more sensitive scaling
+  // ── Account Score (weighted) ───────────────────────────────────────────────
+  const engagementScoreFinal = Math.min(100, Math.round(rawEngRate * 10));
+  const viewScore = Math.min(100, Math.round(avgViews / 200));
   const accountScoreFinal = Math.min(100, Math.round(
     (engagementScoreFinal * 0.4) +
     (viewScore * 0.3) +
     (buyerIntentScore * 0.3)
   ));
 
+  // ── Post ranking (Algorithm v3) ────────────────────────────────────────────
   const scored = summaryData.map(p => ({
     ...p,
-    // Algorithm v3: High-friction signals (comments) are weighted 2.5x
-    // Denominator prioritizes videoViewCount via the view_count fallback chain
     eng: (p.like_count + (p.comments_count * 2.5)) / Math.max(p.view_count, 1),
   }));
   scored.sort((a, b) => b.eng - a.eng);
 
-  // Viral check
+  // ── Viral Potential ────────────────────────────────────────────────────────
   const viralPostsCount = summaryData.filter(p => p.view_count > (avgViews * 1.5)).length;
   const viralPotential = Math.min(100, Math.round((viralPostsCount / total) * 100) + 20);
 
-  // Best posting hour
+  // ── Best Posting Hour ──────────────────────────────────────────────────────
   const hourCounts: Record<number, number> = {};
   summaryData.forEach(p => {
     if (p.timestamp) {
@@ -145,10 +156,13 @@ function computeBasicInsights(summaryData: any[], followers: number = 0) {
   const sortedHours = Object.entries(hourCounts).sort((a, b) => b[1] - a[1]);
   const bestHourFinal = sortedHours[0]?.[0] ?? "12";
 
-  // Top hashtags
+  // ── Top Hashtags ───────────────────────────────────────────────────────────
   const hashtagCount: Record<string, number> = {};
   summaryData.forEach(p => (p.hashtags || []).forEach((h: string) => { hashtagCount[h] = (hashtagCount[h] || 0) + 1; }));
   const topHashtagsFinal = Object.entries(hashtagCount).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+
+  // ── Format helpers ─────────────────────────────────────────────────────────
+  const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : `${n}`;
 
   return {
     _computed: true,
@@ -163,11 +177,27 @@ function computeBasicInsights(summaryData: any[], followers: number = 0) {
     },
     account_summary: {
       total_posts_analyzed: total,
+      // Averages (per post)
       avg_likes: avgLikes,
       avg_comments: avgComments,
       avg_views: avgViews,
+      // Totals (across all scraped posts)
+      total_likes: totalLikes,
+      total_comments: totalComments,
+      total_views: totalViews,
+      total_interactions: totalInteractions,
+      // Formatted versions for UI display
+      total_views_fmt: fmt(totalViews),
+      total_interactions_fmt: fmt(totalInteractions),
+      avg_views_fmt: fmt(avgViews),
+      avg_likes_fmt: fmt(avgLikes),
+      // Type breakdown
+      reel_count: videoPosts,
+      image_count: imagePosts,
+      // Other
       top_hashtags: topHashtagsFinal,
       best_hour: `${bestHourFinal}:00`,
+      followers: followers
     },
     next_post_plan: {
       topic: scored[0]?.topic || "Trending Topic",
@@ -186,6 +216,7 @@ function computeBasicInsights(summaryData: any[], followers: number = 0) {
         `Optimal Posting: Post around ${bestHourFinal}:00 for maximum reach.`,
         `Hashtag Strategy: Your best tags include ${topHashtagsFinal.slice(0, 2).join(", ") || "niche specific tags"}.`,
         `Monetization: ${buyerIntentScore}% buyer intent detected. Use clear shopping CTAs.`,
+        `Content Mix: You have ${videoPosts} Reels and ${imagePosts} Images. ${videoPosts > imagePosts ? "Reels dominate your feed — keep pushing video." : "Consider more Reels for wider reach."}`,
       ],
     },
     action_cards: [
@@ -221,7 +252,7 @@ function computeBasicInsights(summaryData: any[], followers: number = 0) {
         title: "Viral Spark Detected",
         priority: "high",
         confidence_score: 88,
-        trigger: `Your last reel exceeded ${avgViews} views by 40%.`,
+        trigger: `Your last reel exceeded ${fmt(avgViews)} average views by 40%.`,
         action: { primary: "Replicate the first 3 seconds of your top video.", secondary: "Use same audio-visual sync pattern." },
         ready_to_copy: { hook: "You guys liked this one so much...", caption: "Part 2 of what you've been asking for! Let's dive deeper into the process.", cta: "Share with someone who needs to see this!" },
         post_time: { date: "Tomorrow", time: "09:00" },
@@ -288,26 +319,13 @@ async function startServer() {
   });
 
   app.post("/api/insights", async (req, res) => {
-    const { username } = req.body;
+    const { username, contentType, count, enableAI } = req.body;
     if (!username) return res.status(400).json({ error: "Username is required" });
-    if (!process.env.APIFY_API_TOKEN) {
-      return res.status(500).json({ error: "APIFY_API_TOKEN is not configured." });
-    }
 
     try {
-      const client = new ApifyClient({ token: process.env.APIFY_API_TOKEN });
-
-      // ── STEP 1: Scrape latest posts + reels with comments ─────────────────
-      console.log(`[Apify] Scraping data for: ${username}`);
-      const run = await client.actor("apify/instagram-scraper").call({
-        directUrls: [`https://www.instagram.com/${username}/`],
-        resultsType: "posts",
-        resultsLimit: 12,
-        commentsLimit: 30, // Increased for better buyer intent detection
-        addParentData: true,
-      });
-
-      const { items } = await client.dataset(run.defaultDatasetId).listItems();
+      // ── STEP 1: Scrape latest content with configurable type and count ───
+      // Calls the isolated scraper. Easy to swap for open-source later.
+      const items = await scrapeInstagramProfile(username, contentType, count);
 
       if (!items || items.length === 0) {
         return res.status(404).json({
@@ -381,6 +399,11 @@ async function startServer() {
       }) + "\n");
 
       // ── STEP 4: AI Strategic Analysis ───────────────────────────────────
+      if (enableAI === false) {
+        console.log("[AI] Skipping AI analysis as requested by user.");
+        return res.end();
+      }
+
       let aiInsights: any = null;
       let aiUsage: any = null;
 
@@ -436,6 +459,8 @@ Task: Output JSON with strictly ONE field "filename" containing the exact string
 
 ACCOUNT: Followers ${fCount}
 COMPUTED STATS: Avg Views: ${basicInsights.account_summary.avg_views} | Avg Likes: ${basicInsights.account_summary.avg_likes} | Best Hour: ${basicInsights.account_summary.best_hour}
+ACCOUNT SCORE: ${basicInsights.account_score}/100
+BUYER INTENT: ${basicInsights.buyer_intent_score}%
 
 TOP 5 POSTS THIS WEEK:
 ${JSON.stringify(top5Posts, null, 2)}
@@ -449,23 +474,6 @@ Even though you are providing actions based on the playbook, you MUST map your a
 
 Return JSON:
 {
-  "account_score": 0-100 (Overall health score based on engagement),
-  "buyer_intent_score": 0-100 (Percentage of comments indicating intent to buy/learn more),
-  "dashboard": {
-    "growth_score": 0-100,
-    "engagement_rate_avg": "X.XX%",
-    "viral_potential_score": 0-100,
-    "best_performing_post": { "like_count": 0, "view_count": 0, "caption": "", "hook_text": "" },
-    "worst_performing_post": { "like_count": 0, "view_count": 0, "caption": "" }
-  },
-  "account_summary": {
-    "total_posts_analyzed": ${summaryData.length},
-    "avg_likes": 0,
-    "avg_comments": 0,
-    "avg_views": 0,
-    "top_hashtags": [],
-    "best_hour": ""
-  },
   "next_post_plan": {
     "topic": "Strategic topic based on NICHE and Playbook",
     "type": "Video | Image",
@@ -511,17 +519,27 @@ REQUIRED: EXACTLY 5 high-impact action_cards representing the mapped Playbook st
       }
 
       // Stream AI analysis chunk
+      const finalInsights = {
+        ...basicInsights,
+      };
+
+      if (aiInsights) {
+        if (aiInsights.next_post_plan) finalInsights.next_post_plan = aiInsights.next_post_plan;
+        if (aiInsights.advanced_analysis) finalInsights.advanced_analysis = aiInsights.advanced_analysis;
+        if (aiInsights.action_cards) finalInsights.action_cards = aiInsights.action_cards;
+      }
+
       res.write(JSON.stringify({
         type: "ai",
         data: {
-          insights: aiInsights ?? basicInsights,
+          insights: finalInsights,
           aiUsed: !!aiInsights,
           dev: {
             prompt: prompt,
             usage: aiUsage
           }
         }
-      }) + "\n");
+      }) + "\\n");
 
       return res.end();
 
