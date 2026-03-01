@@ -25,45 +25,45 @@ export const ProfileBar: React.FC<ProfileBarProps> = ({
     isLoading = false
 }) => {
     return (
-        <div className="glass-card mb-8 px-6 py-3 rounded-2xl flex items-center justify-between border-b border-white/10 shadow-xl">
-            <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-primary/20 bg-deep-navy">
+        <div className="brutalist-card mb-8 px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-6 !bg-white">
+            <div className="flex items-center gap-6">
+                <div className="w-20 h-20 border-4 border-black overflow-hidden bg-accent shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                     {avatarUrl ? (
                         <img src={avatarUrl} alt={username} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     ) : (
-                        <div className="w-full h-full flex items-center justify-center text-primary font-bold">
+                        <div className="w-full h-full flex items-center justify-center text-black font-black text-2xl">
                             {username[0]?.toUpperCase()}
                         </div>
                     )}
                 </div>
                 <div>
-                    <div className="flex items-center gap-3">
-                        <h2 className="text-sm font-black text-white leading-none">@{username}</h2>
+                    <div className="flex flex-wrap items-center gap-3">
+                        <h2 className="text-2xl font-black text-black leading-none tracking-tighter uppercase">@{username}</h2>
                         {categoryName && categoryName.toLowerCase() !== 'none' && (
-                            <span className="px-2 py-0.5 rounded-md bg-white/5 text-[9px] font-bold text-white/60 tracking-wider uppercase border border-white/10">
+                            <span className="pill-badge !bg-black !text-white !border-black">
                                 {categoryName}
                             </span>
                         )}
                     </div>
-                    <p className="text-[10px] text-muted font-medium mt-1.5">{fullName}</p>
+                    <p className="text-sm text-black font-bold uppercase tracking-widest mt-2">{fullName}</p>
                 </div>
             </div>
 
-            <div className="flex items-center gap-6">
-                <div className="flex items-center gap-6 text-[10px] font-bold tracking-widest text-white/40">
+            <div className="flex items-center gap-10">
+                <div className="flex items-center gap-8 text-[11px] font-black tracking-[0.2em] text-black">
                     <div className="flex flex-col items-center">
-                        <span className="text-white">{followers}</span>
-                        <span className="uppercase text-[8px]">Followers</span>
+                        <span className="text-2xl tracking-tighter">{followers}</span>
+                        <span className="uppercase text-[9px] text-black/60">Followers</span>
                     </div>
-                    <div className="w-px h-4 bg-white/10" />
+                    <div className="w-1 h-8 bg-black" />
                     <div className="flex flex-col items-center">
-                        <span className="text-white">{following}</span>
-                        <span className="uppercase text-[8px]">Following</span>
+                        <span className="text-2xl tracking-tighter">{following}</span>
+                        <span className="uppercase text-[9px] text-black/60">Following</span>
                     </div>
-                    <div className="w-px h-4 bg-white/10" />
+                    <div className="w-1 h-8 bg-black" />
                     <div className="flex flex-col items-center">
-                        <span className="text-white">{posts}</span>
-                        <span className="uppercase text-[8px]">Posts</span>
+                        <span className="text-2xl tracking-tighter">{posts}</span>
+                        <span className="uppercase text-[9px] text-black/60">Posts</span>
                     </div>
                 </div>
             </div>
@@ -71,11 +71,16 @@ export const ProfileBar: React.FC<ProfileBarProps> = ({
             <button
                 onClick={onRefresh}
                 disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-primary rounded-xl text-[10px] font-black uppercase tracking-widest text-white hover:bg-primary/80 transition-all shadow-[0_0_20px_rgba(124,58,237,0.3)] active:scale-95 disabled:opacity-50"
+                className="brutalist-button !bg-accent !text-black flex items-center gap-3"
             >
-                <RefreshCcw size={14} className={isLoading ? "animate-spin" : ""} />
-                Scrape Now
+                <RefreshCcw size={18} className={cn("transition-transform", isLoading ? "animate-spin" : "")} />
+                <span className="text-xs">Scrape Now</span>
             </button>
         </div>
     );
 };
+
+function cn(...classes: any[]) {
+    return classes.filter(Boolean).join(' ');
+}
+
