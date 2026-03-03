@@ -6,3 +6,7 @@ python-dotenv==1.0.1
 setuptools
 pip
 pydantic
+browserforge
+lxml
+cssselect
+camoufox[nimbus]
