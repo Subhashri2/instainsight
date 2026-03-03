@@ -1,5 +1,5 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+@import "tailwindcss";
 
 @layer base {
   :root {
@@ -10,6 +10,7 @@
     /* Signal Yellow */
     --emerald: #00ff88;
     --amber: #ff9900;
+    --blue: #3b82f6;
     --foreground: #000000;
     --border-width: 4px;
     --brutalist-shadow: 12px 12px 0px 0px rgba(0, 0, 0, 1);
@@ -31,6 +32,7 @@
   --color-accent: var(--accent);
   --color-emerald: var(--emerald);
   --color-amber: var(--amber);
+  --color-blue: var(--blue);
   --color-deep-navy: #0a0e1a;
 
   --radius-2xl: 0px;

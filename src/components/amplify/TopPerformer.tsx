@@ -9,6 +9,8 @@ interface TopPerformerProps {
     views?: number;
     comments?: number;
     intent?: number;
+    hook?: string;
+    recommendation?: string;
 }
 
 export const TopPerformer: React.FC<TopPerformerProps> = ({
@@ -18,7 +20,9 @@ export const TopPerformer: React.FC<TopPerformerProps> = ({
     likes = 1240,
     views = 42000,
     comments = 84,
-    intent = 34
+    intent = 34,
+    hook = "Unlock the power of AI to boost your digital presence.",
+    recommendation
 }) => {
     return (
         <div className="brutalist-card p-8 flex flex-col h-full !bg-white">
@@ -31,6 +35,13 @@ export const TopPerformer: React.FC<TopPerformerProps> = ({
                         {type}
                     </span>
                 </div>
+            </div>
+
+            <div className="mb-6">
+                <p className="text-black/60 text-[10px] font-black uppercase tracking-widest mb-2 italic">Engagement Hook:</p>
+                <p className="text-md font-black text-black leading-tight border-l-4 border-accent pl-4 py-1 line-clamp-2">
+                    "{hook || 'No hook text available'}"
+                </p>
             </div>
 
             <div className="grid grid-cols-3 gap-6 mb-8 border-4 border-black p-4 bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
@@ -54,6 +65,13 @@ export const TopPerformer: React.FC<TopPerformerProps> = ({
                     Buyer Intent: {intent}%
                 </span>
             </div>
+
+            {recommendation && (
+                <div className="mt-4 p-4 bg-black text-white border-4 border-black text-xs font-bold uppercase tracking-tight">
+                    <p className="text-accent mb-1 underline decoration-white decoration-2 underline-offset-2">STRATEGIC TIP:</p>
+                    {recommendation}
+                </div>
+            )}
         </div>
     );
 };

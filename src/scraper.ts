@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { ApifyClient } from 'apify-client';
@@ -13,26 +13,78 @@ dotenv.config();
  * @param username The Instagram username to scrape.
  * @returns An array of scraped items (posts/reels).
  */
-export async function scrapeInstagramProfile(username: string, contentType: string = 'all', count: number = 12): Promise<any[]> {
-    console.log(`[Scrapling] Starting data extraction for: ${username} (Type: ${contentType}, Count: ${count})`);
+function runPythonScraper(
+    pythonScript: string,
+    username: string,
+    cookiePathOrNone: string,
+    contentType: string,
+    count: number,
+    includeComments: boolean
+): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const args = [
+            pythonScript,
+            username,
+            cookiePathOrNone,
+            contentType,
+            String(count),
+            includeComments ? "1" : "0",
+        ];
+
+        let stdout = "";
+        let stderr = "";
+
+        const child = spawn("python", args, {
+            stdio: ["ignore", "pipe", "pipe"],
+            windowsHide: true,
+        });
+
+        child.stdout.on("data", (chunk) => {
+            stdout += chunk.toString();
+        });
+
+        child.stderr.on("data", (chunk) => {
+            const line = chunk.toString();
+            stderr += line;
+            process.stderr.write(line);
+        });
+
+        child.on("error", (err) => {
+            reject(err);
+        });
+
+        child.on("close", (code) => {
+            if (code !== 0) {
+                return reject(new Error(`Python scraper exited with code ${code}. ${stderr}`));
+            }
+            resolve(stdout);
+        });
+    });
+}
+
+export async function scrapeInstagramProfile(
+    username: string,
+    contentType: string = 'all',
+    count: number = 12,
+    includeComments: boolean = true
+): Promise<any[]> {
+    console.log(`[Scrapling] Starting data extraction for: ${username} (Type: ${contentType}, Count: ${count}, Comments: ${includeComments})`);
 
     // Attempt to locate standard cookie file
     const cookiePath = path.resolve('instagram_cookies.json');
     const pythonScript = path.resolve('src', 'instagram_scrapling.py');
 
     try {
-        const cookieArg = fs.existsSync(cookiePath) ? ` "${cookiePath}"` : " NONE";
-        // Passing arguments in order: username, cookiePath, contentType, count
-        const cmd = `python "${pythonScript}" "${username}"${cookieArg} "${contentType}" ${count}`;
-
-        console.log(`[Scrapling] Executing: ${cmd}`);
-
-        // Use a large buffer to accommodate JSON output
-        const stdout = execSync(cmd, {
-            encoding: 'utf8',
-            maxBuffer: 1024 * 1024 * 10,
-            stdio: ['ignore', 'pipe', 'inherit'] // pipe stdout, inherit stderr for easier debugging
-        });
+        const cookieArg = fs.existsSync(cookiePath) ? cookiePath : "NONE";
+        console.log(`[Scrapling] Executing python scraper...`);
+        const stdout = await runPythonScraper(
+            pythonScript,
+            username,
+            cookieArg,
+            contentType,
+            count,
+            includeComments
+        );
 
         if (!stdout || stdout.trim() === "") {
             console.warn(`[Scrapling] Empty output from python script.`);
@@ -91,10 +143,14 @@ async function scrapeWithApify(username: string, count: number): Promise<any[]> 
 
         const profile: any = items[0];
         const posts = profile.latestPosts || [];
+        const stories = profile.latestStories || [];
 
-        // Map to flat structure so server.ts can parse it consistently with Scrapling
-        const formattedItems = posts.map((post: any) => ({
+        console.log(`[Apify] Found ${posts.length} posts and ${stories.length} stories.`);
+
+        // Map posts
+        const formattedPosts = posts.map((post: any) => ({
             ...post,
+            type: post.type || (post.isVideo ? "Video" : "Image"),
             ownerUsername: profile.username || profile.ownerUsername,
             ownerFullName: profile.fullName || profile.ownerFullName,
             followersCount: profile.followersCount,
@@ -105,8 +161,24 @@ async function scrapeWithApify(username: string, count: number): Promise<any[]> 
             isBusinessAccount: profile.isBusinessAccount,
         }));
 
+        // Map stories
+        const formattedStories = stories.map((story: any) => ({
+            ...story,
+            type: "Story",
+            ownerUsername: profile.username || profile.ownerUsername,
+            ownerFullName: profile.fullName || profile.ownerFullName,
+            followersCount: profile.followersCount,
+            followsCount: profile.followsCount,
+            postsCount: profile.postsCount,
+            profilePicUrl: profile.profilePicUrl,
+            businessCategoryName: profile.businessCategoryName,
+            isBusinessAccount: profile.isBusinessAccount,
+        }));
+
+        const combinedItems = [...formattedPosts, ...formattedStories];
+
         // Respect the count requested limit
-        const finalItems = formattedItems.slice(0, count);
+        const finalItems = combinedItems.slice(0, count);
 
         console.log(`[Apify] Extracted and formatted ${finalItems.length} items from Apify.`);
         return finalItems;

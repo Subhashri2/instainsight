@@ -15,7 +15,6 @@ import { ActionCard } from './components/ActionCard';
 export default function App() {
   const [username, setUsername] = useState('');
   const [contentType, setContentType] = useState<'all' | 'posts' | 'reels' | 'stories'>('all');
-  const [count, setCount] = useState(12);
   const [enableAI, setEnableAI] = useState(true);
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState('');
@@ -53,7 +52,6 @@ export default function App() {
         body: JSON.stringify({
           username: targetUsername,
           contentType: contentType,
-          count: count,
           enableAI: enableAI
         }),
       });
@@ -103,6 +101,17 @@ export default function App() {
                 }));
                 setAiLoading(false);
                 setLoadingStage('');
+              } else if (chunk.type === "enriched") {
+                setData((prev: any) => ({
+                  ...prev,
+                  posts: chunk.data.posts || prev?.posts || [],
+                  insights: chunk.data.insights || prev?.insights || {},
+                  dev: {
+                    ...prev?.dev,
+                    summaryData: chunk.data.dev?.summaryData || prev?.dev?.summaryData,
+                    rawItems: chunk.data.dev?.rawItems ?? prev?.dev?.rawItems
+                  }
+                }));
               }
             }
           }
@@ -168,8 +177,10 @@ export default function App() {
         likes: bestPost?.likesCount || 0,
         views: bestPost?.videoViewCount || 0,
         comments: bestPost?.commentsCount || 0,
+        hook: bestPost?.caption?.split('\n')[0]?.substring(0, 80) || bestPost?.hook_text,
         timestamp: "Top Post",
-        intent: insights.buyer_intent_score || 0
+        intent: insights.buyer_intent_score || 0,
+        recommendation: insights.buyer_intent_metadata?.recommendation
       },
       profile: {
         username: data.user?.username || username,
@@ -233,7 +244,7 @@ export default function App() {
                   </motion.div>
                 </div>
                 <h1 className="text-8xl font-black text-black tracking-tighter uppercase leading-none">
-                  INSTA<span className="text-accent" style={{ WebkitTextStroke: '4px black' }}>INSIGHT</span>
+                  So-IT<span className="text-accent" style={{ WebkitTextStroke: '4px black' }}>Works.ai</span>
                 </h1>
                 <p className="text-black font-black text-xl uppercase tracking-[0.2em]">Next-Gen Social Intelligence Engine</p>
               </motion.div>
@@ -282,17 +293,7 @@ export default function App() {
                       ))}
                     </div>
 
-                    <div className="flex items-center gap-3 bg-white border-4 border-black px-4 py-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-                      <span className="text-[10px] font-black text-black uppercase tracking-widest">COUNT</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max="50"
-                        value={count}
-                        onChange={(e) => setCount(parseInt(e.target.value) || 12)}
-                        className="bg-transparent text-black font-black text-sm w-12 focus:outline-none text-center"
-                      />
-                    </div>
+
 
                     <button
                       type="button"
@@ -389,7 +390,7 @@ export default function App() {
         <main className="max-w-7xl mx-auto px-6 py-12 animate-in fade-in duration-1000">
           <header className="flex flex-col md:flex-row justify-between items-center mb-12 gap-8 border-b-8 border-black pb-12">
             <div>
-              <h1 className="text-5xl font-black text-black tracking-tighter uppercase leading-none">AMPLIFY<span className="text-accent underline decoration-black decoration-8 underline-offset-8">.</span></h1>
+              <h1 className="text-5xl font-black text-black tracking-tighter uppercase leading-none">So-It Works.ai<span className="text-accent underline decoration-black decoration-8 underline-offset-8">.</span></h1>
               <p className="text-black/60 text-[10px] font-black uppercase tracking-[0.4em] mt-4">Institutional Grade Intelligence v3.0</p>
             </div>
 
