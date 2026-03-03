@@ -34,7 +34,7 @@ function runPythonScraper(
         let stdout = "";
         let stderr = "";
 
-        const child = spawn("python", args, {
+        const child = spawn("python3", args, {
             stdio: ["ignore", "pipe", "pipe"],
             windowsHide: true,
         });
