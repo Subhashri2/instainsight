@@ -9,4 +9,11 @@ pydantic
 browserforge
 lxml
 cssselect
+msgspec
+beautifulsoup4
+w3lib
+tld
+orjson
+httpx
+parsel
 camoufox[nimbus]
