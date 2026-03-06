@@ -54,6 +54,7 @@ async function setup() {
         console.log("──── Collection: posts ──────────────────────────────────");
         console.log("  Type: Base");
         console.log("  Fields:");
+        console.log("    - user         : Relation → users");
         console.log("    - profile      : Relation → profiles");
         console.log("    - ig_post_id   : Text (required)");
         console.log("    - short_code   : Text");
@@ -80,6 +81,8 @@ async function setup() {
         console.log("  Type: Base");
         console.log("  Fields:");
         console.log("    - post           : Relation → posts");
+        console.log("    - user           : Relation → users");
+        console.log("    - profile        : Relation → profiles");
         console.log("    - text           : Text (required)");
         console.log("    - owner_username : Text");
         console.log("");
@@ -157,6 +160,7 @@ async function setup() {
                 name: "posts",
                 type: "base",
                 fields: [
+                    { name: "user", type: "relation", collectionId: usersCollectionId, maxSelect: 1, required: false },
                     { name: "profile", type: "relation", collectionId: "profiles", maxSelect: 1, required: false },
                     { name: "ig_post_id", type: "text", required: true },
                     { name: "short_code", type: "text" },
@@ -186,6 +190,8 @@ async function setup() {
                 name: "comments",
                 type: "base",
                 fields: [
+                    { name: "user", type: "relation", collectionId: usersCollectionId, maxSelect: 1, required: false },
+                    { name: "profile", type: "relation", collectionId: "profiles", maxSelect: 1, required: false },
                     { name: "post", type: "relation", collectionId: "posts", maxSelect: 1, required: false },
                     { name: "text", type: "text", required: true },
                     { name: "owner_username", type: "text" },

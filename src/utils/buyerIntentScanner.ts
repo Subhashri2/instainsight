@@ -75,6 +75,7 @@ export interface BuyerIntentResult {
     topSignals: string[];
     signalBreakdown: Record<string, number>;
     hotPosts: any[];
+    potentialClients: { username: string; comment: string; intentScore: number }[];
     recommendation: string | null;
 }
 
@@ -87,6 +88,7 @@ export function scanBuyerIntent(posts: any[]): BuyerIntentResult {
     let totalComments = 0;
     const signalCounts: Record<string, number> = {};
     const hotPosts: any[] = [];
+    const clientMap = new Map<string, { username: string; comment: string; intentScore: number }>();
 
     for (const post of posts) {
         const comments = post.latest_comments || [];
@@ -106,12 +108,22 @@ export function scanBuyerIntent(posts: any[]): BuyerIntentResult {
 
             totalComments++;
             const signals = detectSignalsInText(text);
+            let commentScore = 0;
 
             for (const signal of signals) {
                 const weight = SIGNAL_WEIGHTS[signal] || 1;
                 postScore += weight;
+                commentScore += weight;
                 postSignals.push(signal);
                 signalCounts[signal] = (signalCounts[signal] || 0) + 1;
+            }
+
+            if (commentScore > 0 && typeof comment !== "string" && comment.ownerUsername) {
+                const username = comment.ownerUsername;
+                const existing = clientMap.get(username);
+                if (!existing || commentScore > existing.intentScore) {
+                    clientMap.set(username, { username, comment: text, intentScore: commentScore });
+                }
             }
         }
 
@@ -154,12 +166,17 @@ export function scanBuyerIntent(posts: any[]): BuyerIntentResult {
         recommendation = "Availability questions detected — add 'DM to check availability' CTA to your top posts.";
     }
 
+    const potentialClients = Array.from(clientMap.values())
+        .sort((a, b) => b.intentScore - a.intentScore)
+        .slice(0, 10);
+
     return {
         intentScore,
         totalCommentsScanned: totalComments,
         topSignals,
         signalBreakdown: signalCounts,
         hotPosts: hotPosts.slice(0, 3),
+        potentialClients,
         recommendation,
     };
 }

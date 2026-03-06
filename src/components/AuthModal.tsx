@@ -64,7 +64,7 @@ export function AuthModal({ isOpen, onClose, onLogin, onRegister, error }: AuthM
                         <div className="bg-black text-white px-8 py-6 flex items-center justify-between">
                             <div>
                                 <h2 className="text-2xl font-black tracking-tighter uppercase">
-                                    {mode === 'login' ? 'Welcome Back' : 'Join InstaInsight'}
+                                    {mode === 'login' ? 'Welcome Back' : 'Join So-It Works.ai'}
                                 </h2>
                                 <p className="text-white/60 text-[10px] font-black uppercase tracking-[0.3em] mt-1">
                                     {mode === 'login' ? 'Sign in to save your analyses' : 'Create account to save data'}

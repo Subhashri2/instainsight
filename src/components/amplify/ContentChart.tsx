@@ -18,7 +18,7 @@ export const ContentChart: React.FC<ContentChartProps> = ({
     data
 }) => {
     const chartData = useMemo(() => {
-        return [...data]
+        return [...(Array.isArray(data) ? data : [])]
             .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
             .map(post => {
                 const date = new Date(post.timestamp);

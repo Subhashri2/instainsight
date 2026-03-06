@@ -11,3 +11,10 @@ SHELL ["/bin/bash", "-c"]
 
 # Set working directory
 WORKDIR /workspaces/instainsight
+
+# Install PocketBase (Linux version)
+RUN apt-get update && apt-get install -y unzip wget \
+    && wget https://github.com/pocketbase/pocketbase/releases/download/v0.22.10/pocketbase_0.22.10_linux_amd64.zip \
+    && unzip pocketbase_0.22.10_linux_amd64.zip -d /usr/local/bin/ \
+    && chmod +x /usr/local/bin/pocketbase \
+    && rm pocketbase_0.22.10_linux_amd64.zip

@@ -25,7 +25,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({ card, onAction, onSave, 
     };
 
     const handleCopy = () => {
-        const text = `Hook:\n${card.ready_to_copy.hook}\n\nCaption:\n${card.ready_to_copy.caption}\n\nCTA:\n${card.ready_to_copy.cta}`;
+        const text = `Hook:\n${card.ready_to_copy?.hook || ""}\n\nCaption:\n${card.ready_to_copy?.caption || ""}\n\nCTA:\n${card.ready_to_copy?.cta || ""}`;
         navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -56,7 +56,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({ card, onAction, onSave, 
                             <TrendingUp size={16} className="text-accent" />
                             <span className="text-[9px] font-black uppercase tracking-widest">Confidence Index</span>
                         </div>
-                        <span className="text-xl font-black tracking-tighter underline decoration-accent decoration-2">{card.confidence_score}%</span>
+                        <span className="text-xl font-black tracking-tighter underline decoration-accent decoration-2">{card.confidence_score || 90}%</span>
                     </div>
 
                     <div className="flex-[2] space-y-2">
@@ -77,9 +77,9 @@ export const ActionCard: React.FC<ActionCardProps> = ({ card, onAction, onSave, 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="p-4 border-4 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex gap-3 items-start">
                             <span className="w-6 h-6 rounded-full border-2 border-black bg-accent flex items-center justify-center font-black text-[10px] shrink-0">1</span>
-                            <p className="text-xs font-black text-black leading-snug pt-0.5">{card.action.primary}</p>
+                            <p className="text-xs font-black text-black leading-snug pt-0.5">{card.action?.primary || "Implement recommendation"}</p>
                         </div>
-                        {card.action.secondary && (
+                        {card.action?.secondary && (
                             <div className="p-4 border-4 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex gap-3 items-start hover:bg-black group/item transition-all">
                                 <span className="w-6 h-6 rounded-full border-2 border-black bg-white flex items-center justify-center font-black text-[10px] shrink-0 group-hover/item:bg-accent group-hover/item:text-black">2</span>
                                 <p className="text-xs font-black text-black group-hover/item:text-white leading-snug pt-0.5">{card.action.secondary}</p>
@@ -101,7 +101,7 @@ export const ActionCard: React.FC<ActionCardProps> = ({ card, onAction, onSave, 
                     </div>
                     <div className="p-4 bg-black text-accent font-black italic text-base leading-snug relative border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
                         <span className="absolute -top-3 left-3 text-2xl text-accent opacity-50 underline decoration-white decoration-2">“</span>
-                        <p className="line-clamp-2">{card.ready_to_copy.hook}</p>
+                        <p className="line-clamp-2">{card.ready_to_copy?.hook || "Ready to copy template will appear here."}</p>
                     </div>
                 </div>
 
@@ -113,17 +113,17 @@ export const ActionCard: React.FC<ActionCardProps> = ({ card, onAction, onSave, 
                         </div>
                         <div>
                             <p className="label-tiny !text-black/40 !text-[8px]">Time</p>
-                            <p className="text-[10px] font-black text-black tracking-tighter uppercase">{card.post_time.date}, {card.post_time.time}</p>
+                            <p className="text-[10px] font-black text-black tracking-tighter uppercase">{card.post_time?.date || "Today"}, {card.post_time?.time || "ASAP"}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 justify-end">
                         <div className="text-right">
                             <p className="label-tiny !text-black/40 !text-[8px]">Expectation</p>
                             <p className="text-[10px] font-black text-black tracking-tighter uppercase whitespace-nowrap">
-                                {card.expected_result.metric ? card.expected_result.metric :
-                                    card.expected_result.followers_increase ? `+${card.expected_result.followers_increase} Followers` :
-                                        card.expected_result.engagement_increase ? `+${card.expected_result.engagement_increase} Engagement` :
-                                            card.expected_result.sales_increase ? `+${card.expected_result.sales_increase} Sales` : 'Impact Grade A'}
+                                {card.expected_result?.metric ? card.expected_result.metric :
+                                    card.expected_result?.followers_increase ? `+${card.expected_result.followers_increase} Followers` :
+                                        card.expected_result?.engagement_increase ? `+${card.expected_result.engagement_increase} Engagement` :
+                                            card.expected_result?.sales_increase ? `+${card.expected_result.sales_increase} Sales` : 'Impact Grade A'}
                             </p>
                         </div>
                         <div className={`w-8 h-8 border-2 border-black flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] ${getTypeColorClass()}`}>

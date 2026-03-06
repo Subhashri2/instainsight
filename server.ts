@@ -177,6 +177,7 @@ function computeBasicInsights(summaryData: any[], followers: number = 0, playboo
       viral_potential_score: viralPotential,
       best_performing_post: scored[0] || {},
       worst_performing_post: scored[scored.length - 1] || {},
+      potential_clients: intentResult.potentialClients || [],
     },
     account_summary: {
       total_posts_analyzed: total,
@@ -335,6 +336,7 @@ function extractHook(caption: string) {
 }
 
 function buildSummaryData(normalizedPosts: any[]) {
+  if (!normalizedPosts || !Array.isArray(normalizedPosts)) return [];
   return normalizedPosts.map((item: any) => ({
     type: item.type,
     like_count: item.likesCount,
@@ -346,11 +348,11 @@ function buildSummaryData(normalizedPosts: any[]) {
     hashtags: item.hashtags || [],
     duration: item.videoDuration || 0,
     music: item.music_info,
-    tagged_users: item.tagged_users,
-    is_collab: item.tagged_users.length > 0,
+    tagged_users: item.tagged_users || [],
+    is_collab: (item.tagged_users || []).length > 0,
     latest_comments: (item.latestComments || []).map((c: any) => ({
-      text: c.text,
-      ownerUsername: c.ownerUsername
+      text: typeof c === 'string' ? c : (c.text || ""),
+      ownerUsername: typeof c === 'string' ? 'unknown' : (c.ownerUsername || c.owner_username || "unknown")
     })),
   }));
 }
@@ -424,8 +426,16 @@ async function startServer() {
         category_name: profileData.categoryName || "",
         biography: profileData.biography || "",
       };
-      const savedProfile = await saveProfile(user.id, pbProfile, token);
-      console.log(`[Save] Profile saved: ${pbProfile.ig_username} (id: ${savedProfile.id})`);
+      console.log("\n\n#################################################");
+      console.log("### [CRITICAL DEBUG] SAVE ENDPOINT HIT        ###");
+      console.log(`### User ID:    ${user.id}`);
+      console.log(`### Profile ID: ${pbProfile.ig_username}`);
+
+      const savedProfile = await saveProfile(user.id, pbProfile);
+      const ACTUAL_PROFILE_ID = savedProfile.id;
+
+      console.log(`### RESOLVED PROFILE RECORD ID: ${ACTUAL_PROFILE_ID}`);
+      console.log("#################################################\n");
 
       // 2. Save posts (smart aggregation)
       const pbPosts: PostData[] = postsData.map((p: any) => ({
@@ -447,7 +457,7 @@ async function startServer() {
         music_info: p.music_info || null,
         tagged_users: p.tagged_users || [],
       }));
-      const { newCount, updatedCount } = await savePosts(savedProfile.id, pbPosts, token);
+      const { newCount, updatedCount } = await savePosts(user.id, savedProfile.id, pbPosts);
       console.log(`[Save] Posts: ${newCount} new, ${updatedCount} updated`);
 
       // 3. Save comments for each post
@@ -457,14 +467,15 @@ async function startServer() {
         if (comments.length === 0) continue;
 
         const igPostId = p.id || p.shortCode || "";
-        const postRecordId = await getPostRecordId(savedProfile.id, igPostId, token);
+        const postRecordId = await getPostRecordId(user.id, savedProfile.id, igPostId, token);
         if (!postRecordId) continue;
 
         const pbComments: CommentData[] = comments.map((c: any) => ({
           text: typeof c === "string" ? c : (c.text || ""),
           owner_username: typeof c === "string" ? "unknown" : (c.ownerUsername || c.owner_username || "unknown"),
         }));
-        totalCommentsSaved += await saveComments(postRecordId, pbComments, token);
+        console.log(`[Save] Saving batch of ${pbComments.length} comments for post ${postRecordId}...`);
+        totalCommentsSaved += await saveComments(user.id, ACTUAL_PROFILE_ID, postRecordId, pbComments);
       }
       console.log(`[Save] Comments saved: ${totalCommentsSaved}`);
 
@@ -475,7 +486,7 @@ async function startServer() {
           ai_response: aiResponse || null,
           action_cards: insights.action_cards || [],
           next_post_plan: insights.next_post_plan || {},
-        }, token);
+        });
         console.log(`[Save] Analysis saved for ${pbProfile.ig_username}`);
       }
 
@@ -804,6 +815,7 @@ Return your analysis as JSON with keys: PROMPT, NEGATIVE_PROMPT`;
   - DO NOT use template text like "Strategic topic based on NICHE". Write REAL text.
   - Use Gemini's JSON mode.
   - Each action must be executable within 24 hours
+  - HASHTAGS: Search for and include currently trending tags (both overall and niche-specific) along with relevant user-specific tags.
 
   REQUIRED: Return your analysis as JSON with keys: next_post_plan, advanced_analysis, action_cards.
   
@@ -885,6 +897,98 @@ Return your analysis as JSON with keys: PROMPT, NEGATIVE_PROMPT`;
         res.write(JSON.stringify({ type: "error", error: "Analysis failed", details: error.message }) + "\n");
         return res.end();
       }
+    }
+  });
+
+  app.post("/api/generate-specific-plan", async (req, res) => {
+    console.log("[SpecificPlan] Request received. Product:", req.body.productDetails, "DryRun:", req.body.dryRun);
+    let { userProfile, summaryData, playbook, productDetails, dryRun, posts } = req.body;
+
+    if (!userProfile) return res.status(400).json({ error: "UserProfile missing" });
+    if (!productDetails) return res.status(400).json({ error: "Product details missing" });
+
+    if (!summaryData) {
+      if (posts && Array.isArray(posts)) {
+        summaryData = buildSummaryData(posts);
+      } else {
+        return res.status(400).json({ error: "Data missing (summaryData or posts required)" });
+      }
+    }
+
+    const effectivePlaybook = playbook || detectNiche(userProfile).playbook;
+    const followers = userProfile.followersCount || 0;
+
+    // Safety check for summaryData format
+    const safeSummaryData = Array.isArray(summaryData) ? summaryData : (Array.isArray(posts) ? buildSummaryData(posts) : []);
+    const basicInsights = computeBasicInsights(safeSummaryData, followers, effectivePlaybook);
+
+    if (!basicInsights.account_summary) {
+      console.warn("[SpecificPlan] Could not compute basic insights, using defaults");
+      basicInsights.account_summary = {
+        image_count: 0, reel_count: 0, avg_likes: 0, avg_views: 0,
+        total_posts_analyzed: 0, avg_comments: 0, total_likes: 0, total_comments: 0,
+        total_views: 0, total_interactions: 0, total_views_fmt: "0",
+        total_interactions_fmt: "0", avg_views_fmt: "0", avg_likes_fmt: "0",
+        best_hour: "12", top_hashtags: [], engagement_rate_avg: "0%",
+        viral_potential_score: 0, posting_frequency: 0
+      } as any;
+    }
+
+    const postMixStr = `${basicInsights.account_summary.image_count} Images, ${basicInsights.account_summary.reel_count} Reels`;
+    const accountSnapshot = `@${userProfile.username} | Niche: ${effectivePlaybook?.nicheLabel || 'Fashion'} | Followers: ${followers} | Avg Likes: ${basicInsights.account_summary.avg_likes} | Avg Views: ${basicInsights.account_summary.avg_views}`;
+
+    const sortedSummaryPosts = [summaryData].sort((a, b) => {
+      const scoreA = a.type === "Video" ? a.view_count : a.like_count + a.comments_count;
+      const scoreB = b.type === "Video" ? b.view_count : b.like_count + b.comments_count;
+      return scoreB - scoreA;
+    });
+    const top5 = sortedSummaryPosts.slice(0, 5);
+
+    const formatPost = (p: any, type: string) => {
+      return `[${type}] ${p.type} | Likes:${p.like_count || 0} | Views:${p.view_count || 0} | Hook: "${p.hook_text}"`;
+    };
+
+    const topPostsSummary = `TOP PERFORMANCE CONTEXT: ${top5.map((p, i) => formatPost(p, String(i + 1))).join(" ")}`;
+    const playbookBlock = `NICHE STRATEGY [${effectivePlaybook?.nicheLabel}]: SIGNALS: ${effectivePlaybook?.signals?.join(" | ")}.`;
+
+    const prompt = `You are a Social Media Growth Strategist.
+CONTEXT:
+ACCOUNT: ${accountSnapshot}
+${topPostsSummary}
+${playbookBlock}
+
+USER'S SPECIFIC PRODUCT FOR NEXT POST:
+"${productDetails}"
+
+TASK: Generate a high-converting NEXT POST PLAN specifically for the product mentioned above. Use the account context and niche strategy to ensure it aligns with what works for this audience. Include currently trending tags (both overall and niche-specific) along with relevant account tags in the "hashtags" field.
+
+OUTPUT: Return ONLY a JSON object with the key "next_post_plan".
+Structure:
+{
+  "next_post_plan": {
+    "topic": "Topic Title",
+    "type": "Video | Image",
+    "time": "HH:MM",
+    "hook": "Compelling hook line",
+    "cta": "Specific call to action",
+    "caption": "Full high-converting caption text",
+    "hashtags": ["tag1", "tag2", "tag3"]
+  }
+}`;
+
+    if (dryRun) {
+      return res.json({ dryRun: true, prompt });
+    }
+
+    try {
+      const aiResult = await callAI(prompt, true);
+      return res.json({
+        next_post_plan: aiResult.data.next_post_plan,
+        usage: aiResult.usage
+      });
+    } catch (err: any) {
+      console.error("[SpecificPlan] generation failed:", err.message);
+      return res.status(500).json({ error: err.message });
     }
   });
 

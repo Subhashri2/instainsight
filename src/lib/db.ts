@@ -11,18 +11,55 @@ dotenv.config();
 
 const POCKETBASE_URL = process.env.POCKETBASE_URL || "http://127.0.0.1:8090";
 
+// Cache for the admin instance
+let adminPbInstance: PocketBase | null = null;
+
 /**
- * Get an authenticated PB instance for DB operations.
- * Uses the provided user token and userId for correct auth scoping.
+ * Get an Admin-authenticated PocketBase instance.
+ * Using Admin (Superuser) context for server-side ingestion is the most reliable way 
+ * to ensure relation fields (like user and profile) are correctly linked every time.
  */
-function getPb(token?: string, userId?: string): PocketBase {
+async function getAdminPb(): Promise<PocketBase> {
+    if (adminPbInstance && adminPbInstance.authStore.isValid) return adminPbInstance;
+
     const instance = new PocketBase(POCKETBASE_URL);
     instance.autoCancellation(false);
-    if (token) {
-        // If we have a real userId, use it, otherwise use a placeholder that satisfies PB rules
-        const idToSave = userId || "authenticated_user";
-        instance.authStore.save(token, { id: idToSave } as any);
+
+    const email = process.env.PB_ADMIN_EMAIL;
+    const pass = process.env.PB_ADMIN_PASSWORD;
+
+    if (!email || !pass) {
+        console.warn("[DB] WARNING: PB_ADMIN_EMAIL or PB_ADMIN_PASSWORD missing. Falling back to public context.");
+        return instance;
     }
+
+    try {
+        // Try v0.23+ superuser auth first
+        await instance.collection("_superusers").authWithPassword(email, pass);
+    } catch {
+        // Legacy admin fallback
+        try {
+            await instance.admins.authWithPassword(email, pass);
+        } catch (err: any) {
+            console.error("[DB] Admin authentication failed:", err.message);
+        }
+    }
+
+    adminPbInstance = instance;
+    return instance;
+}
+
+/**
+ * Get a user-specific PB instance for reading data if needed.
+ */
+function getUserPb(token: string, userId: string): PocketBase {
+    const instance = new PocketBase(POCKETBASE_URL);
+    instance.autoCancellation(false);
+    instance.authStore.save(token, {
+        id: userId,
+        collectionId: "_pb_users_auth_",
+        collectionName: "users",
+    } as any);
     return instance;
 }
 
@@ -39,32 +76,23 @@ export interface ProfileData {
     biography: string;
 }
 
-/**
- * Upsert an Instagram profile for a user.
- * If the user already has this ig_username saved, update it; otherwise create.
- */
-export async function saveProfile(userId: string, profileData: ProfileData, token: string) {
-    const pbClient = getPb(token, userId);
+export async function saveProfile(userId: string, profileData: ProfileData) {
+    const pb = await getAdminPb();
 
     try {
-        // Check if profile already exists for this user + ig_username
-        const existing = await pbClient.collection("profiles").getList(1, 1, {
+        const existing = await pb.collection("profiles").getList(1, 1, {
             filter: `user = "${userId}" && ig_username = "${profileData.ig_username}"`,
         });
 
+        const payload = {
+            user: userId,
+            ...profileData,
+        };
+
         if (existing.items.length > 0) {
-            // Update existing profile
-            const updated = await pbClient.collection("profiles").update(existing.items[0].id, {
-                ...profileData,
-            });
-            return updated;
+            return await pb.collection("profiles").update(existing.items[0].id, payload);
         } else {
-            // Create new profile
-            const created = await pbClient.collection("profiles").create({
-                user: userId,
-                ...profileData,
-            });
-            return created;
+            return await pb.collection("profiles").create(payload);
         }
     } catch (err: any) {
         console.error("[DB] saveProfile failed:", err.message);
@@ -94,57 +122,37 @@ export interface PostData {
     tagged_users: string[];
 }
 
-/**
- * Smart-save posts for a profile.
- * - Optimized to fetch all existing post IDs first.
- * - Only updates if metrics have changed.
- */
-export async function savePosts(profileId: string, posts: PostData[], token: string) {
-    const pbClient = getPb(token);
+export async function savePosts(userId: string, profileId: string, posts: PostData[]) {
+    const pb = await getAdminPb();
     let newCount = 0;
     let updatedCount = 0;
 
     try {
-        // 1. Fetch all existing ig_post_ids for this profile in one go
-        const existingRecords = await pbClient.collection("posts").getFullList({
-            filter: `profile = "${profileId}"`,
-            fields: "id,ig_post_id,likes_count,comments_count,video_view_count"
+        const existingRecords = await pb.collection("posts").getFullList({
+            filter: `user = "${userId}" && profile = "${profileId}"`,
+            fields: "id,ig_post_id"
         });
 
-        const existingMap = new Map(existingRecords.map(r => [r.ig_post_id, r]));
+        const existingMap = new Map(existingRecords.map((r: any) => [r.ig_post_id, r]));
 
         for (const post of posts) {
-            const existing = existingMap.get(post.ig_post_id);
+            const existing = existingMap.get(post.ig_post_id) as any;
+            const payload = {
+                user: userId,
+                profile: profileId,
+                ...post,
+            };
 
             if (existing) {
-                // 2. Only update if metrics actually changed to avoid redundant DB writes
-                const changed =
-                    existing.likes_count !== post.likes_count ||
-                    existing.comments_count !== post.comments_count ||
-                    existing.video_view_count !== post.video_view_count;
-
-                if (changed) {
-                    await pbClient.collection("posts").update(existing.id, {
-                        likes_count: post.likes_count,
-                        comments_count: post.comments_count,
-                        video_view_count: post.video_view_count,
-                        play_count: post.play_count,
-                        save_count: post.save_count,
-                        share_count: post.share_count,
-                    });
-                    updatedCount++;
-                }
+                await pb.collection("posts").update(existing.id, payload);
+                updatedCount++;
             } else {
-                // 3. New post
-                await pbClient.collection("posts").create({
-                    profile: profileId,
-                    ...post,
-                });
+                await pb.collection("posts").create(payload);
                 newCount++;
             }
         }
     } catch (err: any) {
-        console.error("[DB] savePosts bulk operation failed:", err.message);
+        console.error("[DB] savePosts failed:", err.message);
     }
 
     return { newCount, updatedCount };
@@ -157,34 +165,52 @@ export interface CommentData {
     owner_username: string;
 }
 
-/**
- * Save comments for a post. Skips duplicates by checking text + owner_username.
- */
-export async function saveComments(postRecordId: string, comments: CommentData[], token: string) {
-    const pbClient = getPb(token);
+export async function saveComments(userId: string, profileId: string, postRecordId: string, comments: CommentData[]) {
+    const pb = await getAdminPb();
     let savedCount = 0;
+    let skippedCount = 0;
 
-    for (const comment of comments) {
-        try {
-            // Simple duplicate check
-            const existing = await pbClient.collection("comments").getList(1, 1, {
-                filter: `post = "${postRecordId}" && owner_username = "${comment.owner_username}" && text = "${comment.text.replace(/"/g, '\\"').substring(0, 100)}"`,
-            });
+    try {
+        // Fetch existing comments for this post to avoid duplicates
+        // Note: Using getFullList on a post's comments is usually safe as top posts rarely have >10,000 comments fetched at once.
+        const existingComments = await pb.collection("comments").getFullList({
+            filter: `post = "${postRecordId}"`,
+            fields: "owner_username,text"
+        });
 
-            if (existing.items.length === 0) {
-                await pbClient.collection("comments").create({
-                    post: postRecordId,
-                    text: comment.text,
-                    owner_username: comment.owner_username,
+        // Create a simple lookup key: username + text
+        const existingMap = new Set(existingComments.map(c => `${c.owner_username}:${c.text}`));
+
+        for (const comment of comments) {
+            if (!comment.text?.trim()) continue;
+
+            const commentKey = `${comment.owner_username || "unknown"}:${comment.text}`;
+            if (existingMap.has(commentKey)) {
+                skippedCount++;
+                continue;
+            }
+
+            try {
+                await pb.collection("comments").create({
+                    "user": String(userId),
+                    "profile": String(profileId),
+                    "post": String(postRecordId),
+                    "text": comment.text,
+                    "owner_username": comment.owner_username || "unknown",
                 });
                 savedCount++;
+                // Add to map to prevent duplicates within the same batch if any
+                existingMap.add(commentKey);
+            } catch (err: any) {
+                console.error(`[DB] saveComments individual error:`, err.message);
+                if (err.data) console.error(`[DB] Error Data:`, JSON.stringify(err.data));
             }
-        } catch (err: any) {
-            // Continue with other comments
-            console.error(`[DB] saveComments failed:`, err.message);
         }
+    } catch (err: any) {
+        console.error(`[DB] saveComments batch error:`, err.message);
     }
 
+    console.log(`[DB] saveComments: ${savedCount} saved, ${skippedCount} skipped (duplicates)`);
     return savedCount;
 }
 
@@ -197,29 +223,22 @@ export interface AnalysisData {
     next_post_plan: any;
 }
 
-function parseJsonField<T>(value: any, fallback: T): T {
-    if (value == null) return fallback;
-    if (typeof value !== "string") return value as T;
-    try {
-        return JSON.parse(value) as T;
-    } catch {
-        return fallback;
-    }
-}
-
-/**
- * Save an analysis run for a user + profile
- */
-export async function saveAnalysis(
-    userId: string,
-    profileId: string,
-    analysisData: AnalysisData,
-    token: string
-) {
-    const pbClient = getPb(token, userId);
+export async function saveAnalysis(userId: string, profileId: string, analysisData: AnalysisData) {
+    const pb = await getAdminPb();
 
     try {
-        const record = await pbClient.collection("analyses").create({
+        // Simple deduplication: Check if an analysis for this user+profile was created in the last 60 seconds
+        const oneMinuteAgo = new Date(Date.now() - 60 * 1000).toISOString().replace('T', ' ').split('.')[0];
+        const recent = await pb.collection("analyses").getList(1, 1, {
+            filter: `user = "${userId}" && profile = "${profileId}" && created >= "${oneMinuteAgo}"`,
+        });
+
+        if (recent.items.length > 0) {
+            console.log(`[DB] saveAnalysis: Skipped (already saved an analysis for this profile in the last 60 seconds)`);
+            return recent.items[0];
+        }
+
+        return await pb.collection("analyses").create({
             user: userId,
             profile: profileId,
             insights: analysisData.insights,
@@ -227,128 +246,118 @@ export async function saveAnalysis(
             action_cards: analysisData.action_cards,
             next_post_plan: analysisData.next_post_plan,
         });
-        return record;
     } catch (err: any) {
         console.error("[DB] saveAnalysis failed:", err.message);
         throw err;
     }
 }
 
-/**
- * Get all analyses for a user, newest first
- */
+// ─── Fetching (User Scoped) ───────────────────────────────────────────────────
+
 export async function getAnalyses(userId: string, token: string) {
-    const pbClient = getPb(token, userId);
+    const pb = getUserPb(token, userId);
 
     try {
-        console.log(`[DB] Fetching analyses for user: ${userId}`);
-        const records = await pbClient.collection("analyses").getList(1, 50, {
+        const records = await pb.collection("analyses").getList(1, 50, {
             filter: `user = "${userId}"`,
             sort: "-id",
             expand: "profile",
         });
-        console.log(`[DB] Found ${records.items.length} analyses.`);
-        const profileCache = new Map<string, any>();
-        const postsCache = new Map<string, any[]>();
-
+        
         return await Promise.all(records.items.map(async (item) => {
-            const insights = parseJsonField<any>(item.insights, {});
-            const aiResponse = parseJsonField<any>(item.ai_response, null);
-            const actionCards = parseJsonField<any[]>(item.action_cards, []);
-            const nextPostPlan = parseJsonField<any>(item.next_post_plan, {});
-
             let profileRecord = (item.expand as any)?.profile;
-            const profileId = Array.isArray((item as any).profile)
-                ? (item as any).profile[0]
-                : (item as any).profile;
+            const profileId = Array.isArray((item as any).profile) ? (item as any).profile[0] : (item as any).profile;
 
-            // Fallback: some legacy records may not return expand.profile, so resolve directly.
+            // Fallback: if expand didn't populate the profile (e.g. API rule issue), fetch it directly
             if (!profileRecord && profileId) {
-                if (profileCache.has(profileId)) {
-                    profileRecord = profileCache.get(profileId);
-                } else {
-                    try {
-                        profileRecord = await pbClient.collection("profiles").getOne(profileId);
-                        profileCache.set(profileId, profileRecord);
-                    } catch {
-                        profileRecord = null;
-                    }
+                try {
+                    profileRecord = await pb.collection("profiles").getOne(profileId);
+                } catch {
+                    // profile fetch failed, continue with undefined
                 }
             }
 
             let normalizedPosts: any[] = [];
             if (profileId) {
-                if (postsCache.has(profileId)) {
-                    normalizedPosts = postsCache.get(profileId) || [];
-                } else {
-                    try {
-                        const postRecords = await pbClient.collection("posts").getFullList({
-                            filter: `profile = "${profileId}"`,
-                            sort: "-timestamp",
-                        });
-                        normalizedPosts = postRecords.map((p: any) => ({
-                            id: p.ig_post_id || p.id,
-                            shortCode: p.short_code || "",
-                            type: p.type || "Image",
-                            caption: p.caption || "",
-                            likesCount: p.likes_count || 0,
-                            commentsCount: p.comments_count || 0,
-                            videoViewCount: p.video_view_count || 0,
-                            playCount: p.play_count || 0,
-                            saveCount: p.save_count || 0,
-                            shareCount: p.share_count || 0,
-                            displayUrl: p.display_url || "",
-                            timestamp: p.timestamp || "",
-                            hashtags: parseJsonField<string[]>(p.hashtags, []),
-                            url: p.url || "",
-                            videoDuration: p.duration || 0,
-                            music_info: p.music_info || null,
-                            tagged_users: parseJsonField<string[]>(p.tagged_users, []),
-                            latestComments: [],
-                        }));
-                    } catch {
-                        normalizedPosts = [];
-                    }
-                    postsCache.set(profileId, normalizedPosts);
+                try {
+                    const postRecords = await pb.collection("posts").getFullList({
+                        filter: `user = "${userId}" && profile = "${profileId}"`,
+                        sort: "-timestamp",
+                    });
+                    normalizedPosts = postRecords.map((p: any) => ({
+                        id: p.ig_post_id || p.id,
+                        caption: p.caption || "",
+                        likesCount: p.likes_count || 0,
+                        commentsCount: p.comments_count || 0,
+                        videoViewCount: p.video_view_count || 0,
+                        displayUrl: p.display_url || "",
+                        timestamp: p.timestamp || "",
+                        type: p.type || "Image",
+                        hashtags: p.hashtags || [],
+                        videoDuration: p.duration || 0,
+                        music_info: p.music_info || null,
+                        tagged_users: p.tagged_users || [],
+                    }));
+                } catch {
+                    normalizedPosts = [];
                 }
             }
 
+            if (profileRecord) {
+                // Ensure we handle both snake_case (DB) and camelCase (sometimes in expanded objects)
+                // and the naming mismatch between followsCount/followingCount
+                const p = profileRecord;
+                return {
+                    id: item.id,
+                    created: item.created,
+                    ig_username: item.ig_username || p.ig_username || p.username || "unknown",
+                    profile_pic_url: p.profile_pic_url || p.profilePicUrl || "",
+                    profile: {
+                        full_name: p.full_name || p.fullName || "",
+                        followers_count: Number(p.followers_count ?? p.followersCount ?? 0),
+                        following_count: Number(p.following_count ?? p.followingCount ?? p.follows_count ?? p.followsCount ?? 0),
+                        posts_count: Number(p.posts_count ?? p.postsCount ?? p.postCount ?? 0),
+                        category_name: p.category_name || p.businessCategoryName || p.categoryName || "",
+                        biography: p.biography || p.bio || "",
+                    },
+                    posts: normalizedPosts,
+                    insights: typeof item.insights === "string" ? JSON.parse(item.insights) : item.insights,
+                    action_cards: typeof item.action_cards === "string" ? JSON.parse(item.action_cards) : item.action_cards,
+                    next_post_plan: typeof item.next_post_plan === "string" ? JSON.parse(item.next_post_plan) : item.next_post_plan,
+                };
+            }
+
+            // Fallback if no profile record found
             return {
                 id: item.id,
                 created: item.created,
-                ig_username: profileRecord?.ig_username || "unknown",
-                profile_pic_url: profileRecord?.profile_pic_url || "",
+                ig_username: item.ig_username || "unknown",
+                profile_pic_url: "",
                 profile: {
-                    full_name: profileRecord?.full_name || "",
-                    followers_count: profileRecord?.followers_count || 0,
-                    following_count: profileRecord?.following_count || 0,
-                    posts_count: profileRecord?.posts_count || 0,
-                    category_name: profileRecord?.category_name || "",
-                    biography: profileRecord?.biography || "",
+                    full_name: "",
+                    followers_count: 0,
+                    following_count: 0,
+                    posts_count: 0,
+                    category_name: "",
+                    biography: "",
                 },
                 posts: normalizedPosts,
-                insights,
-                ai_response: aiResponse,
-                action_cards: actionCards,
-                next_post_plan: nextPostPlan,
+                insights: typeof item.insights === "string" ? JSON.parse(item.insights) : item.insights,
+                action_cards: typeof item.action_cards === "string" ? JSON.parse(item.action_cards) : item.action_cards,
+                next_post_plan: typeof item.next_post_plan === "string" ? JSON.parse(item.next_post_plan) : item.next_post_plan,
             };
         }));
     } catch (err: any) {
         console.error("[DB] getAnalyses failed:", err.message);
-        if (err.data) console.error("[DB] Error details:", JSON.stringify(err.data));
         return [];
     }
 }
 
-/**
- * Get existing post IDs for a profile (for smart aggregation)
- */
-export async function getExistingPostIds(profileId: string, token: string): Promise<string[]> {
-    const pbClient = getPb(token);
-
+export async function getExistingPostIds(userId: string, profileId: string, token: string): Promise<string[]> {
+    const pb = getUserPb(token, userId);
     try {
-        const records = await pbClient.collection("posts").getList(1, 500, {
-            filter: `profile = "${profileId}"`,
+        const records = await pb.collection("posts").getList(1, 1000, {
+            filter: `user = "${userId}" && profile = "${profileId}"`,
             fields: "ig_post_id",
         });
         return records.items.map((item) => (item as any).ig_post_id);
@@ -357,15 +366,11 @@ export async function getExistingPostIds(profileId: string, token: string): Prom
     }
 }
 
-/**
- * Get a post record by ig_post_id for comment association
- */
-export async function getPostRecordId(profileId: string, igPostId: string, token: string): Promise<string | null> {
-    const pbClient = getPb(token);
-
+export async function getPostRecordId(userId: string, profileId: string, igPostId: string, token: string): Promise<string | null> {
+    const pb = getUserPb(token, userId);
     try {
-        const records = await pbClient.collection("posts").getList(1, 1, {
-            filter: `profile = "${profileId}" && ig_post_id = "${igPostId}"`,
+        const records = await pb.collection("posts").getList(1, 1, {
+            filter: `user = "${userId}" && profile = "${profileId}" && ig_post_id = "${igPostId}"`,
         });
         return records.items.length > 0 ? records.items[0].id : null;
     } catch {

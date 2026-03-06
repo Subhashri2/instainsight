@@ -46,12 +46,12 @@ export const ActionStrip: React.FC<ActionStripProps> = ({ cards = [] }) => {
                     </div>
 
                     <p className="text-xs text-black/70 leading-relaxed font-bold mb-4 line-clamp-2">
-                        {card.action.primary}
+                        {card.action?.primary || card.trigger || ""}
                     </p>
 
                     <div className="flex justify-between items-center mt-auto pt-3 border-t-2 border-black/5">
                         <span className="text-[9px] font-black uppercase tracking-widest text-black/40 whitespace-nowrap">
-                            Confidence: {card.confidence_score}%
+                            Confidence: {card.confidence_score || 90}%
                         </span>
                         <ArrowRight size={16} className="text-black group-hover:translate-x-2 transition-all" />
                     </div>

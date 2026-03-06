@@ -4,12 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 // Amplify Components
 import { ProfileBar } from './components/amplify/ProfileBar';
-import { MetricCard } from './components/amplify/MetricCard';
 import { AccountHealth } from './components/amplify/AccountHealth';
 import { NextPostPlan } from './components/amplify/NextPostPlan';
-import { TopPerformer } from './components/amplify/TopPerformer';
 import { ContentChart } from './components/amplify/ContentChart';
 import { ActionStrip } from './components/amplify/ActionStrip';
+import { OverviewAnalysisCard } from './components/amplify/OverviewAnalysisCard';
+import { GenerativeThumbnailCard } from './components/amplify/GenerativeThumbnailCard';
+import { TopClientsCard, TopClient } from './components/amplify/TopClientsCard';
 import { ActionCard } from './components/ActionCard';
 import { AuthModal } from './components/AuthModal';
 import { usePocketBase } from './hooks/usePocketBase';
@@ -376,9 +377,13 @@ export default function App() {
         posts: data.user?.postsCount?.toLocaleString() || posts.length,
         categoryName: data.user?.categoryName
       },
-      actionCards: insights.action_cards || [],
-      growthRoadmap: insights.advanced_analysis?.growth_opportunities || [],
-      contentBlueprint: insights.reel_suggestions || []
+      actionCards: Array.isArray(insights.action_cards) ? insights.action_cards : [],
+      growthRoadmap: Array.isArray(insights.advanced_analysis?.growth_opportunities) ? insights.advanced_analysis.growth_opportunities : [],
+      contentBlueprint: Array.isArray(insights.reel_suggestions) ? insights.reel_suggestions : [],
+      potentialClients: Array.isArray(insights.dashboard?.potential_clients) ? insights.dashboard.potential_clients : [] as TopClient[],
+      // Pass raw context for specialized tools
+      rawUserProfile: data.user,
+      rawSummaryData: data.dev?.summaryData || insights.account_summary
     };
   }, [data, username]);
 
@@ -747,90 +752,33 @@ export default function App() {
                     isLoading={loading}
                   />
 
-                  {/* Row 1A - Performance Metrics */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <MetricCard
-                      label="Engagement Rate"
-                      value={dashboardData.engagement}
-                      badgeText={parseFloat(dashboardData.engagement) > 3 ? "Strong" : "Low"}
-                      variant="amber"
-                      icon={Activity}
-                    />
-                    <MetricCard
-                      label="Growth Index"
-                      value={dashboardData.growth}
-                      badgeText={dashboardData.growth > 60 ? "Optimal" : "Needs Work"}
-                      variant="emerald"
-                      icon={TrendingUp}
-                    />
-                    <MetricCard
-                      label="Viral Probability"
-                      value={`${dashboardData.viral}%`}
-                      badgeText={dashboardData.viral > 40 ? "High" : "Moderate"}
-                      variant="violet"
-                      icon={Zap}
-                    />
-                    <MetricCard
-                      label="Posts Analyzed"
-                      value={dashboardData.velocity}
-                      badgeText={`${dashboardData.reelCount}R · ${dashboardData.imageCount}P`}
-                      variant="blue"
-                      icon={Timer}
-                    />
-                  </div>
-
-                  {/* Row 1B - Aggregate Totals */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <MetricCard
-                      label="Total Views"
-                      value={dashboardData.totalViews}
-                      badgeText="All Posts"
-                      variant="violet"
-                      icon={Eye}
-                    />
-                    <MetricCard
-                      label="Total Interactions"
-                      value={dashboardData.totalInteractions}
-                      badgeText="Likes + Comments"
-                      variant="amber"
-                      icon={MessageSquare}
-                    />
-                    <MetricCard
-                      label="Avg Views / Post"
-                      value={dashboardData.avgViews}
-                      badgeText="Per Content"
-                      variant="emerald"
-                      icon={Activity}
-                    />
-                    <MetricCard
-                      label="Avg Likes / Post"
-                      value={dashboardData.avgLikes}
-                      badgeText="Per Content"
-                      variant="blue"
-                      icon={Share2}
-                    />
-                  </div>
-
-                  {/* Row 2 Analytics Chart */}
-                  <ContentChart
-                    data={data.posts}
-                  />
-
-                  {/* Row 3 Main Content */}
+                  {/* Two-Column Main Layout */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
-                    <div className="lg:col-span-3">
+                    {/* Left Column - Analytics & Charts */}
+                    <div className="lg:col-span-5 flex flex-col gap-8">
+                      <OverviewAnalysisCard data={dashboardData} />
                       <AccountHealth score={dashboardData.score} metrics={dashboardData.healthMetrics} />
+                      <ContentChart data={data.posts} />
                     </div>
-                    <div className="lg:col-span-5">
+
+                    {/* Right Column - Actionable Content */}
+                    <div className="lg:col-span-7 flex flex-col gap-8">
                       <NextPostPlan
                         {...dashboardData.nextPlan}
+                        onViewStrategy={() => setActiveTab('strategy')}
+                        userProfile={dashboardData.rawUserProfile}
+                        summaryData={dashboardData.rawSummaryData}
+                        isDevMode={devMode}
+                        posts={data.posts}
+                      />
+                      <GenerativeThumbnailCard
+                        topic={dashboardData.nextPlan.topic}
+                        hook={dashboardData.nextPlan.hook}
+                        caption={dashboardData.nextPlan.caption}
                         niche={dashboardData.profile.categoryName}
                         isDevMode={devMode}
-                        onViewStrategy={() => setActiveTab('strategy')}
                       />
-                    </div>
-                    <div className="lg:col-span-4">
-                      <TopPerformer {...dashboardData.topPerformer} />
+                      <TopClientsCard clients={dashboardData.potentialClients} />
                     </div>
                   </div>
 
