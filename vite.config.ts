@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       watch: {
-        ignored: ['**/pb_data/**', '**/pb_migrations/**', '**/pagination_info.json', '**/raw_data_debug.json', '**/raw_instagram_response.json', '**/test_output.json', '**/scraped_data_debug.json', '**/raw_data_debug.json', '**/scr/.*py']
+        ignored: ['**/pb_data/**', '**/pb_migrations/**', '**/pagination_info.json', '**/raw_data_debug.json', '**/raw_instagram_response.json', '**/test_output.json', '**/scraped_data_debug.json', '**/raw_data_debug.json', '**/src/**/*.py']
       },
       hmr: process.env.DISABLE_HMR !== 'true',
       host: true,
