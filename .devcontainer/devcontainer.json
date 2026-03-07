@@ -4,11 +4,6 @@
         "dockerfile": "Dockerfile",
         "context": ".."
     },
-    "features": {
-        "ghcr.io/devcontainers/features/python:1": {
-            "version": "3.11"
-        }
-    },
     "customizations": {
         "vscode": {
             "extensions": [
@@ -25,7 +20,5 @@
         5173,
         8090
     ],
-    "postCreateCommand": "npm install && python3 -m pip install --break-system-packages -r requirements.txt && python3 -m playwright install --with-deps chromium && python3 -m patchright install chromium && scrapling install",
-    "postStartCommand": "python3 -m pip install --break-system-packages -r requirements.txt",
     "remoteUser": "node"
 }
