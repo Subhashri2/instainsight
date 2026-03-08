@@ -1,0 +1,29 @@
+[
+  {
+    "name": "sessionid",
+    "value": "REPLACE_WITH_YOUR_SESSION_ID",
+    "domain": ".instagram.com",
+    "path": "/",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "ds_user_id",
+    "value": "REPLACE_WITH_YOUR_USER_ID",
+    "domain": ".instagram.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "csrftoken",
+    "value": "REPLACE_WITH_YOUR_CSRF_TOKEN",
+    "domain": ".instagram.com",
+    "path": "/",
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  }
+]

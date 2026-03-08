@@ -411,10 +411,11 @@ def _warmup_instagram(page, target_url):
     page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
     time.sleep(random.uniform(1.5, 3.0))
 
-def scrape_instagram(username, count=20, cookie_path=None, content_type="all", include_comments=True, existing_posts=None):
+def scrape_instagram(username, count=20, cookie_path=None, content_type="all", include_comments=True, existing_posts=None, scrape_mode="advanced"):
     if existing_posts is None:
         existing_posts = set()
-    print(f"[Scrapling] Targeting {username} for {count} items... (Skipping {len(existing_posts)} existing)", file=sys.stderr)
+    mode = (scrape_mode or "advanced").strip().lower()
+    print(f"[Scrapling] Targeting {username} for {count} items... (Skipping {len(existing_posts)} existing) [mode={mode}]", file=sys.stderr)
     items_map = {}
     last_page_info = {}
     session_cookies = load_cookies(cookie_path)
@@ -800,75 +801,76 @@ def scrape_instagram(username, count=20, cookie_path=None, content_type="all", i
             file=sys.stderr
         )
 
-    # Mobile API first: use web_profile_info + GraphQL cursor pagination without browser UI.
-    try:
-        print("[Scrapling] Mobile API phase starting...", file=sys.stderr)
-        mobile_payload = _try_mobile_profile_payload(username)
-        if mobile_payload:
-            m_items, m_pinfo, m_uid = map_to_apify_format(mobile_payload, username_context=username)
-            if m_uid:
-                profile_user_id["value"] = m_uid
-            if m_items:
-                update_items(m_items, m_pinfo)
-                print(f"[Scrapling] Mobile API seed captured {len(m_items)} items.", file=sys.stderr)
+    if mode == "advanced":
+        # Mobile API first: use web_profile_info + GraphQL cursor pagination without browser UI.
+        try:
+            print("[Scrapling] Mobile API phase starting...", file=sys.stderr)
+            mobile_payload = _try_mobile_profile_payload(username)
+            if mobile_payload:
+                m_items, m_pinfo, m_uid = map_to_apify_format(mobile_payload, username_context=username)
+                if m_uid:
+                    profile_user_id["value"] = m_uid
+                if m_items:
+                    update_items(m_items, m_pinfo)
+                    print(f"[Scrapling] Mobile API seed captured {len(m_items)} items.", file=sys.stderr)
 
-            # Cursor-driven pagination via mobile/web GraphQL endpoint
-            mobile_cursor = last_page_info.get("end_cursor")
-            rounds = 0
-            while len(items_map) < count and mobile_cursor and rounds < 12:
-                rounds += 1
-                before = len(items_map)
-                page_payload = _mobile_graphql_page(
-                    profile_user_id["value"] or "",
-                    cursor=mobile_cursor,
-                    reels=False,
-                    page_size=min(50, max(12, count))
-                )
-                if not page_payload:
-                    break
-                p_items, p_info, _ = map_to_apify_format(page_payload, username_context=username)
-                if isinstance(p_info, dict) and (p_info.get("end_cursor") or "has_next_page" in p_info):
-                    update_items([], p_info)
-                if p_items:
-                    update_items(p_items, p_info)
-                after = len(items_map)
-                next_cursor = (p_info or {}).get("end_cursor") if isinstance(p_info, dict) else None
-                print(f"[Scrapling] Mobile Cursor {rounds}: Total {after} items captured", file=sys.stderr)
-                # Hard guard: no growth + same cursor => exhausted
-                if after <= before and (not next_cursor or next_cursor == mobile_cursor):
-                    break
-                mobile_cursor = next_cursor or mobile_cursor
-
-            # Reels API pagination pass when all/reels requested
-            if content_type in ("all", "reels") and profile_user_id["value"] and len(items_map) < count:
-                reels_cursor = last_page_info.get("end_cursor")
-                reels_round = 0
-                while len(items_map) < count and reels_round < 8:
-                    reels_round += 1
+                # Cursor-driven pagination via mobile/web GraphQL endpoint
+                mobile_cursor = last_page_info.get("end_cursor")
+                rounds = 0
+                while len(items_map) < count and mobile_cursor and rounds < 12:
+                    rounds += 1
                     before = len(items_map)
-                    reels_payload = _mobile_graphql_page(
-                        profile_user_id["value"],
-                        cursor=reels_cursor,
-                        reels=True,
+                    page_payload = _mobile_graphql_page(
+                        profile_user_id["value"] or "",
+                        cursor=mobile_cursor,
+                        reels=False,
                         page_size=min(50, max(12, count))
                     )
-                    if not reels_payload:
+                    if not page_payload:
                         break
-                    r_items, r_info, _ = map_to_apify_format(reels_payload, username_context=username)
-                    if isinstance(r_info, dict) and (r_info.get("end_cursor") or "has_next_page" in r_info):
-                        update_items([], r_info)
-                    if r_items:
-                        update_items(r_items, r_info)
+                    p_items, p_info, _ = map_to_apify_format(page_payload, username_context=username)
+                    if isinstance(p_info, dict) and (p_info.get("end_cursor") or "has_next_page" in p_info):
+                        update_items([], p_info)
+                    if p_items:
+                        update_items(p_items, p_info)
                     after = len(items_map)
-                    next_cursor = (r_info or {}).get("end_cursor") if isinstance(r_info, dict) else None
-                    print(f"[Scrapling] Mobile Reels Cursor {reels_round}: Total {after} items captured", file=sys.stderr)
-                    if after <= before and (not next_cursor or next_cursor == reels_cursor):
+                    next_cursor = (p_info or {}).get("end_cursor") if isinstance(p_info, dict) else None
+                    print(f"[Scrapling] Mobile Cursor {rounds}: Total {after} items captured", file=sys.stderr)
+                    # Hard guard: no growth + same cursor => exhausted
+                    if after <= before and (not next_cursor or next_cursor == mobile_cursor):
                         break
-                    reels_cursor = next_cursor or reels_cursor
-        else:
-            print("[Scrapling] Mobile API phase returned no seed payload.", file=sys.stderr)
-    except Exception as e:
-        print(f"[Scrapling] Mobile API phase failed: {e}", file=sys.stderr)
+                    mobile_cursor = next_cursor or mobile_cursor
+
+                # Reels API pagination pass when all/reels requested
+                if content_type in ("all", "reels") and profile_user_id["value"] and len(items_map) < count:
+                    reels_cursor = last_page_info.get("end_cursor")
+                    reels_round = 0
+                    while len(items_map) < count and reels_round < 8:
+                        reels_round += 1
+                        before = len(items_map)
+                        reels_payload = _mobile_graphql_page(
+                            profile_user_id["value"],
+                            cursor=reels_cursor,
+                            reels=True,
+                            page_size=min(50, max(12, count))
+                        )
+                        if not reels_payload:
+                            break
+                        r_items, r_info, _ = map_to_apify_format(reels_payload, username_context=username)
+                        if isinstance(r_info, dict) and (r_info.get("end_cursor") or "has_next_page" in r_info):
+                            update_items([], r_info)
+                        if r_items:
+                            update_items(r_items, r_info)
+                        after = len(items_map)
+                        next_cursor = (r_info or {}).get("end_cursor") if isinstance(r_info, dict) else None
+                        print(f"[Scrapling] Mobile Reels Cursor {reels_round}: Total {after} items captured", file=sys.stderr)
+                        if after <= before and (not next_cursor or next_cursor == reels_cursor):
+                            break
+                        reels_cursor = next_cursor or reels_cursor
+            else:
+                print("[Scrapling] Mobile API phase returned no seed payload.", file=sys.stderr)
+        except Exception as e:
+            print(f"[Scrapling] Mobile API phase failed: {e}", file=sys.stderr)
 
     if len(items_map) >= count:
         res = list(items_map.values())
@@ -973,7 +975,7 @@ def scrape_instagram(username, count=20, cookie_path=None, content_type="all", i
                         entry_url = entry_urls[pass_idx % len(entry_urls)]
                         run_mode.update({
                             "name": f"{label}/pass{pass_idx + 1}",
-                            "warmup": attempt["warmup"] if pass_idx == 0 else False,
+                            "warmup": attempt["warmup"] if (pass_idx == 0 and mode != "legacy") else False,
                             "login_wall": False,
                             "new_posts_this_run": 0,
                             "session_exhausted_this_pass": False,
@@ -1046,6 +1048,7 @@ if __name__ == "__main__":
     n = int(sys.argv[4]) if len(sys.argv) > 4 else 12
     include_comments = sys.argv[5] != "0" if len(sys.argv) > 5 else True
     existing_posts_arg = sys.argv[6] if len(sys.argv) > 6 else "NONE"
+    scrape_mode = sys.argv[7] if len(sys.argv) > 7 else "advanced"
     
     existing_posts = set(existing_posts_arg.split(',')) if existing_posts_arg != "NONE" and existing_posts_arg else set()
     
@@ -1055,7 +1058,8 @@ if __name__ == "__main__":
         cookie_path=cookie_path,
         content_type=content_type,
         include_comments=include_comments,
-        existing_posts=existing_posts
+        existing_posts=existing_posts,
+        scrape_mode=scrape_mode
     )
     
     # Debug dump to local file as requested

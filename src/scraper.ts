@@ -20,7 +20,8 @@ function runPythonScraper(
     contentType: string,
     count: number,
     includeComments: boolean,
-    existingPostIds: string[] = []
+    existingPostIds: string[] = [],
+    scrapeMode: string = "advanced"
 ): Promise<string> {
     return new Promise((resolve, reject) => {
         const args = [
@@ -30,7 +31,8 @@ function runPythonScraper(
             contentType,
             String(count),
             includeComments ? "1" : "0",
-            existingPostIds.length > 0 ? existingPostIds.join(',') : "NONE"
+            existingPostIds.length > 0 ? existingPostIds.join(',') : "NONE",
+            scrapeMode
         ];
 
         let stdout = "";
@@ -71,7 +73,13 @@ export async function scrapeInstagramProfile(
     includeComments: boolean = true,
     existingPostIds: string[] = []
 ): Promise<any[]> {
+    const legacyStableMode = String(process.env.SCRAPLING_LEGACY_STABLE_MODE || "0") === "1";
+    const advancedMode = String(process.env.SCRAPLING_ADVANCED_MODE || "1") !== "0";
+    const apifyFallbackEnabled = String(process.env.SCRAPLING_ENABLE_APIFY_FALLBACK || "1") !== "0";
+    const scrapeMode = legacyStableMode ? "legacy" : (advancedMode ? "advanced" : "legacy");
+
     console.log(`[Scrapling] Starting data extraction for: ${username} (Type: ${contentType}, Count: ${count}, Comments: ${includeComments}, Existing: ${existingPostIds.length})`);
+    console.log(`[Scrapling] Modes => legacy_stable=${legacyStableMode ? "on" : "off"}, advanced=${advancedMode ? "on" : "off"}, apify_fallback=${apifyFallbackEnabled ? "on" : "off"}`);
 
     // Attempt to locate standard cookie file
     const cookiePath = path.resolve('instagram_cookies.json');
@@ -87,7 +95,8 @@ export async function scrapeInstagramProfile(
             contentType,
             count,
             includeComments,
-            existingPostIds
+            existingPostIds,
+            scrapeMode
         );
 
         if (!stdout || stdout.trim() === "") {
@@ -101,16 +110,23 @@ export async function scrapeInstagramProfile(
         // If the result is just the basic HTML fallback (no 'type' field meaning no post data extracted)
         // or empty, trigger Apify fallback
         if (resultItems.length === 0 || (resultItems.length === 1 && !resultItems[0].type)) {
-            console.warn(`[Scrapling] Only basic metadata extracted (likely 302 login wall). Triggering Apify fallback...`);
-            return await scrapeWithApify(username, count, includeComments);
+            if (apifyFallbackEnabled) {
+                console.warn(`[Scrapling] Only basic metadata extracted (likely 302 login wall). Triggering Apify fallback...`);
+                return await scrapeWithApify(username, count, includeComments);
+            }
+            console.warn(`[Scrapling] Only basic metadata extracted and Apify fallback is OFF.`);
+            return [];
         }
 
         return resultItems;
 
     } catch (error: any) {
         console.error(`[Scraper] Scrapling engine failed:`, error.message);
-        console.log(`[Scraper] Falling back to Apify due to Scrapling failure...`);
-        return await scrapeWithApify(username, count, includeComments);
+        if (apifyFallbackEnabled) {
+            console.log(`[Scraper] Falling back to Apify due to Scrapling failure...`);
+            return await scrapeWithApify(username, count, includeComments);
+        }
+        throw error;
     }
 }
 
