@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Clock, Sparkles, Copy, Check, Image as ImageIcon, ExternalLink, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { apiFetch } from '../../lib/api';
 
 interface NextPostPlanProps {
     topic?: string;
@@ -73,7 +74,7 @@ export const NextPostPlan: React.FC<NextPostPlanProps> = ({
         setIsGenerating(true);
         try {
             console.log("[SpecificPlan] Requesting for:", productDetails);
-            const res = await fetch('/api/generate-specific-plan', {
+            const res = await apiFetch('/api/generate-specific-plan', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -224,4 +225,3 @@ export const NextPostPlan: React.FC<NextPostPlanProps> = ({
         </div>
     );
 };
-

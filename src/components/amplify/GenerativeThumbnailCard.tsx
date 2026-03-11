@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Image as ImageIcon, Copy, Check, ExternalLink, Loader2 } from 'lucide-react';
+import React, { useState, ChangeEvent } from 'react';
+import { Image as ImageIcon, Copy, Check, ExternalLink, Loader2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { apiFetch } from '../../lib/api';
 
 interface GenerativeThumbnailProps {
   topic?: string;
@@ -21,6 +22,9 @@ export const GenerativeThumbnailCard: React.FC<GenerativeThumbnailProps> = ({
   const [thumbnailPrompt, setThumbnailPrompt] = useState<{ PROMPT: string; NEGATIVE_PROMPT: string } | null>(null);
   const [loadingThumbnail, setLoadingThumbnail] = useState(false);
   const [dryRunPrompt, setDryRunPrompt] = useState<string | null>(null);
+  const [referenceImageData, setReferenceImageData] = useState<string | null>(null);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   const handleCopy = (text: string, section: string) => {
     navigator.clipboard.writeText(text);
@@ -28,11 +32,21 @@ export const GenerativeThumbnailCard: React.FC<GenerativeThumbnailProps> = ({
     setTimeout(() => setCopiedSec(null), 2000);
   };
 
+  const handleReferenceUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setReferenceImageData(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const generateThumbnail = async () => {
     setLoadingThumbnail(true);
     setDryRunPrompt(null);
     try {
-      const res = await fetch('/api/generate-thumbnail-prompt', {
+      const res = await apiFetch('/api/generate-thumbnail-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -47,10 +61,35 @@ export const GenerativeThumbnailCard: React.FC<GenerativeThumbnailProps> = ({
         const result = await res.json();
         if (result.dryRun) {
           setDryRunPrompt(result.prompt);
+          setGeneratedImageUrl(null);
         } else if (result.PROMPT) {
           setThumbnailPrompt(result);
+          setGeneratedImageUrl(null);
+          setImageError(null);
+
+          try {
+            const imageBody: Record<string, any> = { prompt: result.PROMPT };
+            if (referenceImageData) imageBody.referenceImage = referenceImageData;
+            if (result.NEGATIVE_PROMPT) imageBody.negativePrompt = result.NEGATIVE_PROMPT;
+            const imageRes = await apiFetch('/api/generate-thumbnail-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(imageBody),
+            });
+            if (!imageRes.ok) {
+              const errBody = await imageRes.json().catch(() => null);
+              throw new Error(errBody?.error || "Image generation failed");
+            }
+            const imagePayload = await imageRes.json();
+            setGeneratedImageUrl(imagePayload.imageUrl || null);
+          } catch (imageErr: any) {
+            console.error("Thumbnail image generation error:", imageErr);
+            setImageError(imageErr?.message || "Image generation failed");
+          }
         } else {
           console.error("Malformed AI response:", result);
+          setGeneratedImageUrl(null);
+          setImageError("Malformed AI response");
         }
       }
     } catch (err) {
@@ -87,6 +126,22 @@ export const GenerativeThumbnailCard: React.FC<GenerativeThumbnailProps> = ({
         </button>
 
         {isDevMode && <div className="text-[10px] font-black uppercase text-center text-blue-800 bg-blue-200 border border-blue-800 p-1">Dev Mode mock enabled</div>}
+
+        <div className="border-4 border-black p-4 bg-white space-y-3">
+          <label className="text-[10px] font-black uppercase tracking-widest text-black/70">Reference image (optional)</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleReferenceUpload}
+            className="w-full border-2 border-black/20 px-3 py-2 text-[10px] uppercase tracking-[0.3em] bg-white focus:outline-none"
+          />
+          {referenceImageData && (
+            <div className="mt-2">
+              <p className="text-[10px] font-black text-black/60 uppercase tracking-[0.3em] mb-1">Uploaded preview</p>
+              <img src={referenceImageData} alt="Reference" className="w-full h-40 object-cover border-2 border-black" />
+            </div>
+          )}
+        </div>
 
         <AnimatePresence>
           {dryRunPrompt && (
@@ -174,6 +229,29 @@ export const GenerativeThumbnailCard: React.FC<GenerativeThumbnailProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {generatedImageUrl && (
+          <div className="border-4 border-black pt-4 bg-white px-6 pb-4 mt-4 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] space-y-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-black/60">Generated Thumbnail</p>
+            <div className="w-full border-2 border-black">
+              <img src={generatedImageUrl} alt="Generated thumbnail" className="w-full object-contain" />
+            </div>
+            <a
+              href={generatedImageUrl}
+              download="generative-thumbnail.png"
+              className="inline-flex items-center gap-2 px-3 py-2 border-2 border-black font-black uppercase text-xs tracking-[0.4em] hover:bg-black hover:text-white transition-all"
+            >
+              <Download size={14} />
+              Download
+            </a>
+          </div>
+        )}
+
+        {imageError && (
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-700">
+            {imageError}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1,33 +1,46 @@
+import "./env.js";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
-import dotenv from "dotenv";
-import { scrapeInstagramProfile } from "./src/scraper.js";
-import { scanBuyerIntent } from "./src/utils/buyerIntentScanner.js";
+import { fileURLToPath } from "url";
+import { scrapeInstagramProfile } from "./scraper.js";
+import { scanBuyerIntent } from "./utils/buyerIntentScanner.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, SubjectReferenceImage, SubjectReferenceType } from "@google/genai";
 
 // PocketBase
-import { registerUser, loginUser, validateToken } from "./src/lib/pocketbase.js";
+import { registerUser, loginUser, validateToken } from "./lib/pocketbase.js";
 import {
   saveProfile, savePosts, saveComments, saveAnalysis,
   getAnalyses, getPostRecordId,
   type ProfileData, type PostData, type CommentData,
-} from "./src/lib/db.js";
-
-dotenv.config();
+} from "./lib/db.js";
 
 // ─── Load instruction markdown files once at startup ─────────────────────────
-const loadFile = (filePath: string) => {
-  try { return fs.readFileSync(path.resolve(filePath), "utf-8"); }
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendDir = path.resolve(__dirname);
+const loadFile = (relativePath: string) => {
+  try { return fs.readFileSync(path.resolve(backendDir, relativePath), "utf-8"); }
   catch { return ""; }
 };
-const brain = loadFile("src/brain.md");
-const instruction = loadFile("src/instruction.md");
-const analysis = loadFile("src/analysis_instruction.md");
+const brain = loadFile("brain.md");
+const instruction = loadFile("instruction.md");
+const analysis = loadFile("analysis_instruction.md");
+const imagenClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // ─── Load playbooks for Niche Auto-Detection ───────────────────────────────
 import { detectNiche } from "./refCode/playbooks.js";
+
+const parseReferenceImage = (data?: string) => {
+  if (!data) return null;
+  const match = data.match(/^data:(.*?);base64,(.*)$/);
+  return {
+    mimeType: match?.[1] || "image/png",
+    imageBytes: match?.[2] || data,
+  };
+};
 
 // ─── AI call helper: uses Gemini 2.0 Flash ──────────────────────────────
 async function callAI(prompt: string, expectJson: boolean = true): Promise<any> {
@@ -473,7 +486,7 @@ async function startServer() {
         if (comments.length === 0) continue;
 
         const igPostId = p.id || p.shortCode || "";
-        const postRecordId = await getPostRecordId(user.id, savedProfile.id, igPostId, token);
+      const postRecordId = await getPostRecordId(user.id, savedProfile.id, igPostId);
         if (!postRecordId) continue;
 
         const pbComments: CommentData[] = comments.map((c: any) => ({
@@ -518,7 +531,7 @@ async function startServer() {
     if (!user) return res.status(401).json({ error: "Invalid token" });
 
     try {
-      const analyses = await getAnalyses(user.id, token);
+      const analyses = await getAnalyses(user.id);
       return res.json({ analyses });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
@@ -553,45 +566,32 @@ async function startServer() {
     console.log("[Thumbnail] Request received. DryRun:", req.body.dryRun);
     const { niche, productName, caption, keyDetails, dryRun } = req.body;
 
-    const prompt = `You are a professional AI image prompt engineer specializing in Indian fashion, jewellery, and lifestyle product photography.
+    const prompt = `You are an AI image prompt engineer for Indian fashion e-commerce.
 
-A seller has provided their business and product details below. Analyze the product type yourself and generate ONE ready-to-use image generation prompt they can paste into Leonardo AI, Midjourney, or Adobe Firefly.
+SELLER INPUT:
+- Niche: ${niche}
+- Product: ${productName}
+- Caption: ${caption}
+- Details: ${keyDetails}
 
-SELLER DATA:
-Niche: ${niche || 'Fashion'}
-Product Name: ${productName || 'Product'}
-Caption: ${caption || ''}
-Key Details: ${keyDetails || ''}
+Based on the product type, generate one professional catalogue-style image prompt.
 
-YOUR JOB:
-- Detect the product type from the data above (saree / lehenga / jewellery / indo-western / kurta / other)
-- Choose the right model pose and setting for that product type
-- Generate a prompt that shows the product being WORN or USED by a real Indian model in a professional fashion catalogue style
+PRODUCT TYPE → POSE & SETTING:
+- Saree/Lehenga → full body, traditional drape, elegant studio backdrop
+- Jewellery → model close-up, focus on the jewellery piece, soft bokeh, warm skin contrast
+- Kurta/Suit → three-quarter pose, clean white or pastel background, soft daylight
+- Indo-western/Fusion → lifestyle setting, dynamic pose, natural outdoor or urban light
 
-PRODUCT TYPE RULES (apply automatically):
-- Saree / Lehenga / Ethnic wear → full body standing, traditional draping, studio or elegant indoor background
-- Jewellery → close-up on model, focus on neck/ears/wrist, soft bokeh background, skin tone contrast
-- Indo-western / Western / Fusion → dynamic pose, lifestyle setting, natural light or urban background  
-- Kurta / Suit → three-quarter body, clean minimal background, soft daylight
+ALWAYS:
+- Single adult Indian woman model, realistic skin tones
+- Product clearly visible, well-lit, fabric texture visible
+- No celebrities, brand names, camera gear, or children
 
-QUALITY RULES
-- Single adult Indian female model
-- Product clearly visible and well lit
-- Natural skin tones and fabric textures
-- Clean minimal background
-- Avoid celebrities and camera gear (Canon, Sony etc.)
-- Avoid clutter and overly cinematic terms
-
-SAFETY RULES
-Avoid policy-triggering content:
-- No celebrities or real public figures
-- No minors (always adult model)
-- No sexualized or revealing descriptions
-- No copyrighted characters or brand names
-- No political or religious sensitive themes
-
-OUTPUT FORMAT (strictly this only):
-Return your analysis as JSON with keys: PROMPT, NEGATIVE_PROMPT`;
+Return JSON only:
+{
+  "prompt": "...",
+  "negative_prompt": "celebrities, minors, blur, overexposed, clutter, camera brands, text, watermark"
+}`;
 
     if (dryRun) {
       return res.json({ dryRun: true, prompt });
@@ -609,6 +609,68 @@ Return your analysis as JSON with keys: PROMPT, NEGATIVE_PROMPT`;
     } catch (err: any) {
       console.error("[Thumbnail] generation failed:", err.message);
       return res.status(500).json({ error: "Failed to generate thumbnail prompt" });
+    }
+  });
+
+  app.post("/api/generate-thumbnail-image", async (req, res) => {
+    const { prompt, referenceImage, negativePrompt } = req.body;
+    if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+
+    try {
+      let generatedResponse;
+      const imageConfig: Record<string, any> = {
+        numberOfImages: 1,
+        outputMimeType: "image/png",
+      };
+      if (negativePrompt) imageConfig.negativePrompt = negativePrompt;
+      if (referenceImage) {
+        const parsed = parseReferenceImage(referenceImage);
+        if (!parsed) {
+          return res.status(400).json({ error: "Invalid reference image" });
+        }
+        const subjectReference = new SubjectReferenceImage();
+        subjectReference.referenceImage = {
+          mimeType: parsed.mimeType,
+          imageBytes: parsed.imageBytes,
+        };
+        subjectReference.config = {
+          subjectType: SubjectReferenceType.SUBJECT_TYPE_DEFAULT,
+        };
+
+        generatedResponse = await imagenClient.models.editImage({
+          model: "Gemini 3.1 Flash Image",
+          prompt,
+          referenceImages: [subjectReference],
+          config: imageConfig,
+        });
+      } else {
+        generatedResponse = await imagenClient.models.generateImages({
+          model: "Gemini 3.1 Flash Image",
+          prompt,
+          config: imageConfig,
+        });
+      }
+
+      const generatedImage = generatedResponse?.generatedImages?.[0]?.image;
+      if (!generatedImage) {
+        return res.status(500).json({ error: "No image returned from model" });
+      }
+      const imageBytes = generatedImage.imageBytes;
+      const imageMime = generatedImage.mimeType || "image/png";
+      const imageUrl = generatedImage.gcsUri
+        ? generatedImage.gcsUri
+        : imageBytes
+          ? `data:${imageMime};base64,${imageBytes}`
+          : null;
+
+      if (!imageUrl) {
+        return res.status(500).json({ error: "Generated image is empty" });
+      }
+
+      return res.json({ imageUrl });
+    } catch (err: any) {
+      console.error("[Thumbnail] image generation failed:", err.message);
+      return res.status(500).json({ error: "Failed to generate thumbnail image" });
     }
   });
 

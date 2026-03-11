@@ -44,29 +44,24 @@ Our proprietary analysis framework implements:
 
 ## 📂 Project Structure (Cleaned for Demo)
 
-- `server.ts`: Central orchestration hub for Scraping, AI, and Database.
-- `src/App.tsx`: Premium Dashboard UI implementing Algorithm v4 visualization.
-- `src/lib/pocketbase.ts`: Core database and authentication logic.
-- `src/scraper.ts`: Hybrid scraping logic with local/cloud failover.
-- `src/instagram_scrapling.py`: High-performance local python scraping engine.
-- `pb_migrations/`: Database schema and evolution scripts.
-- `.devcontainer/`: One-click setup for GitHub Codespaces (Auto-configures PocketBase & Scraper).
+- `backend/server.ts`: Express + Vite middleware gateway that handles scraping, AI orchestration, PocketBase APIs, and shared instructions.
+- `backend/lib/*.ts`: PocketBase helpers (`db.ts`, `pocketbase.ts`) plus `backend/utils/buyerIntentScanner.ts`.
+- `backend/scraper.ts` + `backend/instagram_scrapling.py`: Scrapling + Apify hybrid scraping stack.
+- `backend/pb_setup.ts`: PocketBase collection bootstrapper.
+- `backend/pb_data/` + `backend/pb_migrations/`: Persistent PocketBase storage (ignored from git).
+- `src/App.tsx`, `src/components`, `src/hooks`: Vite/React premium dashboard UI accessed via the `npm run dev` workflow.
+- `.devcontainer/`: Codespaces setup that wires up PocketBase, the scraper, and Vite for instant onboarding.
 
 ---
 
 ## 🛠️ Getting Started (Codespaces / Local)
 
-1. **Environment Setup:** Create a `.env` file with:
-   ```env
-   GEMINI_API_KEY=your_key
-   APIFY_API_TOKEN=your_token (optional fallback)
-   ```
-2. **Instagram Cookies:** Place `instagram_cookies.json` in the root directory for the local scraper to bypass login walls.
-3. **Launch PocketBase:**
-   - Run `pocketbase serve` (on port 8090).
-3. **Launch Application:**
-   - Run `npm run dev` (Starts both App and Backend).
-4. **Access:** Open the forwarded port for the app (usually 5173).
+1. **Backend environment:** Copy `backend/.env.example` to `backend/.env` and fill in the keys (`GEMINI_API_KEY`, `POCKETBASE_URL`, `PB_ADMIN_*`, `APIFY_API_TOKEN`, scraper toggles, etc.). This keeps the server-side secrets next to the backend code and is automatically loaded before the Express routes spin up.
+2. **Frontend environment:** Copy `.env.example` to `.env` (or set the Vercel project variables) and make sure `VITE_API_BASE_URL` points to your Codespace-forwarded backend URL when the UI is hosted on Vercel. Leave it blank during local `npm run dev` so the UI just proxies to the same origin. `VITE_GEMINI_API_KEY` remains optional—most core operations still go through the backend.
+3. **Instagram Cookies:** Drop `instagram_cookies.json` in the repo root so the local Scrapling engine can bypass login walls when scraping.
+4. **Start PocketBase:** Run `npm run pb` (this runs `pocketbase serve --dir ./backend/pb_data` or the bundled binary depending on your platform).
+5. **Start the stack:** Run `npm run dev` (concurrently starts PocketBase and the backend server with Vite middleware; the UI is available on 5173 in Codespaces).
+6. **Access:** Visit the forwarded dev port (e.g., `https://<codespace>.preview/...`) or, when deploying the frontend to Vercel, the published Vercel URL will consume the backend through `VITE_API_BASE_URL`.
 
 ---
 *Locked & Ready for Deployment*

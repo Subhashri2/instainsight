@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run pb\" \"npm run server\"",
-    "pb": "pocketbase serve --dir ./pb_data || ./pocketbase.exe serve --dir ./pb_data",
-    "server": "tsx server.ts",
+    "pb": "pocketbase serve --dir ./backend/pb_data || ./backend/pocketbase.exe serve --dir ./backend/pb_data",
+    "server": "tsx backend/server.ts",
     "build": "vite build",
-    "start": "node server.ts",
+    "start": "node backend/server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"

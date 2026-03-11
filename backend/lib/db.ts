@@ -4,10 +4,8 @@
  * Collections: profiles, posts, comments, analyses
  */
 
+import "../env.js";
 import PocketBase from "pocketbase";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const POCKETBASE_URL = process.env.POCKETBASE_URL || "http://127.0.0.1:8090";
 
@@ -62,6 +60,20 @@ function getUserPb(token: string, userId: string): PocketBase {
     } as any);
     return instance;
 }
+
+const safeParseJson = <T>(value: unknown): T | null => {
+    if (typeof value === "string") {
+        try {
+            return JSON.parse(value) as T;
+        } catch {
+            return null;
+        }
+    }
+    if (value === null || value === undefined) {
+        return null;
+    }
+    return value as T;
+};
 
 // ─── Profile Operations ───────────────────────────────────────────────────────
 
@@ -241,10 +253,10 @@ export async function saveAnalysis(userId: string, profileId: string, analysisDa
         return await pb.collection("analyses").create({
             user: userId,
             profile: profileId,
-            insights: analysisData.insights,
+            insights: JSON.stringify(analysisData.insights || {}),
             ai_response: analysisData.ai_response,
-            action_cards: analysisData.action_cards,
-            next_post_plan: analysisData.next_post_plan,
+            action_cards: JSON.stringify(analysisData.action_cards || []),
+            next_post_plan: JSON.stringify(analysisData.next_post_plan || {}),
         });
     } catch (err: any) {
         console.error("[DB] saveAnalysis failed:", err.message);
@@ -254,8 +266,8 @@ export async function saveAnalysis(userId: string, profileId: string, analysisDa
 
 // ─── Fetching (User Scoped) ───────────────────────────────────────────────────
 
-export async function getAnalyses(userId: string, token: string) {
-    const pb = getUserPb(token, userId);
+export async function getAnalyses(userId: string) {
+    const pb = await getAdminPb();
 
     try {
         const records = await pb.collection("analyses").getList(1, 50, {
@@ -321,9 +333,9 @@ export async function getAnalyses(userId: string, token: string) {
                         biography: p.biography || p.bio || "",
                     },
                     posts: normalizedPosts,
-                    insights: typeof item.insights === "string" ? JSON.parse(item.insights) : item.insights,
-                    action_cards: typeof item.action_cards === "string" ? JSON.parse(item.action_cards) : item.action_cards,
-                    next_post_plan: typeof item.next_post_plan === "string" ? JSON.parse(item.next_post_plan) : item.next_post_plan,
+                    insights: safeParseJson(item.insights) ?? {},
+                    action_cards: safeParseJson(item.action_cards) ?? [],
+                    next_post_plan: safeParseJson(item.next_post_plan) ?? {},
                 };
             }
 
@@ -342,9 +354,9 @@ export async function getAnalyses(userId: string, token: string) {
                     biography: "",
                 },
                 posts: normalizedPosts,
-                insights: typeof item.insights === "string" ? JSON.parse(item.insights) : item.insights,
-                action_cards: typeof item.action_cards === "string" ? JSON.parse(item.action_cards) : item.action_cards,
-                next_post_plan: typeof item.next_post_plan === "string" ? JSON.parse(item.next_post_plan) : item.next_post_plan,
+                insights: safeParseJson(item.insights) ?? {},
+                action_cards: safeParseJson(item.action_cards) ?? [],
+                next_post_plan: safeParseJson(item.next_post_plan) ?? {},
             };
         }));
     } catch (err: any) {
@@ -353,8 +365,8 @@ export async function getAnalyses(userId: string, token: string) {
     }
 }
 
-export async function getExistingPostIds(userId: string, profileId: string, token: string): Promise<string[]> {
-    const pb = getUserPb(token, userId);
+export async function getExistingPostIds(userId: string, profileId: string): Promise<string[]> {
+    const pb = await getAdminPb();
     try {
         const records = await pb.collection("posts").getList(1, 1000, {
             filter: `user = "${userId}" && profile = "${profileId}"`,
@@ -366,8 +378,8 @@ export async function getExistingPostIds(userId: string, profileId: string, toke
     }
 }
 
-export async function getPostRecordId(userId: string, profileId: string, igPostId: string, token: string): Promise<string | null> {
-    const pb = getUserPb(token, userId);
+export async function getPostRecordId(userId: string, profileId: string, igPostId: string): Promise<string | null> {
+    const pb = await getAdminPb();
     try {
         const records = await pb.collection("posts").getList(1, 1, {
             filter: `user = "${userId}" && profile = "${profileId}" && ig_post_id = "${igPostId}"`,

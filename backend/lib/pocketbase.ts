@@ -4,10 +4,8 @@
  * Works in both local dev and GitHub Codespaces.
  */
 
+import "../env.js";
 import PocketBase from "pocketbase";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const POCKETBASE_URL = process.env.POCKETBASE_URL || "http://127.0.0.1:8090";
 

@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '../lib/api';
 
 export interface PBUser {
     id: string;
@@ -39,7 +40,7 @@ export function usePocketBase(): UsePocketBaseReturn {
 
         if (storedToken && storedUser) {
             // Validate token with backend
-            fetch('/api/auth/me', {
+            apiFetch('/api/auth/me', {
                 headers: { Authorization: `Bearer ${storedToken}` },
             })
                 .then((res) => {
@@ -64,7 +65,7 @@ export function usePocketBase(): UsePocketBaseReturn {
     const login = useCallback(async (email: string, password: string) => {
         setError(null);
         try {
-            const res = await fetch('/api/auth/login', {
+            const res = await apiFetch('/api/auth/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password }),
@@ -85,7 +86,7 @@ export function usePocketBase(): UsePocketBaseReturn {
     const register = useCallback(async (email: string, password: string, name: string) => {
         setError(null);
         try {
-            const res = await fetch('/api/auth/register', {
+            const res = await apiFetch('/api/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password, name }),

@@ -1,10 +1,8 @@
+import "./env.js";
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { ApifyClient } from 'apify-client';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 function envFlag(value: string | undefined, defaultValue: boolean): boolean {
     if (value === undefined || value === null || value === "") return defaultValue;
@@ -113,7 +111,7 @@ export async function scrapeInstagramProfile(
 
     // Attempt to locate standard cookie file
     const cookiePath = path.resolve('instagram_cookies.json');
-    const pythonScript = path.resolve('src', 'instagram_scrapling.py');
+    const pythonScript = path.resolve('backend', 'instagram_scrapling.py');
 
     try {
         const cookieArg = fs.existsSync(cookiePath) ? cookiePath : "NONE";

@@ -14,6 +14,7 @@ import { TopClientsCard, TopClient } from './components/amplify/TopClientsCard';
 import { ActionCard } from './components/ActionCard';
 import { AuthModal } from './components/AuthModal';
 import { usePocketBase } from './hooks/usePocketBase';
+import { apiFetch, getApiUrl } from './lib/api';
 
 export default function App() {
   const [username, setUsername] = useState('');
@@ -50,7 +51,7 @@ export default function App() {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      const res = await fetch('/api/save', {
+      const res = await apiFetch('/api/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,7 +92,7 @@ export default function App() {
     setAiLoading(true);
     setLoadingStage('Architecting New Strategy...');
     try {
-      const res = await fetch('/api/analyze-existing', {
+      const res = await apiFetch('/api/analyze-existing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -148,7 +149,7 @@ export default function App() {
     setLoadingStage('Restoring Intelligence Archive...');
     setHistoryLoading(true);
     try {
-      const res = await fetch('/api/history', {
+      const res = await apiFetch('/api/history', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -231,7 +232,7 @@ export default function App() {
 
     let hasBasicData = false;
     try {
-      const res = await fetch('/api/insights', {
+      const res = await apiFetch('/api/insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -346,6 +347,7 @@ export default function App() {
       const scoreB = ((b.likesCount || 0) + ((b.commentsCount || 0) * 2.5)) / Math.max(b.videoViewCount || 1, 1);
       return scoreB - scoreA;
     })[0];
+    const imageProxyBase = getApiUrl("/api/image-proxy");
 
     return {
       engagement: insights.dashboard?.engagement_rate_avg || "0.00%",
@@ -376,7 +378,7 @@ export default function App() {
         hashtags: []
       },
       topPerformer: {
-        imageUrl: `/api/image-proxy?url=${encodeURIComponent(bestPost?.displayUrl || "https://images.unsplash.com/photo-1549439602-43ebca2327af?q=80&w=1000")}`,
+        imageUrl: `${imageProxyBase}?url=${encodeURIComponent(bestPost?.displayUrl || "https://images.unsplash.com/photo-1549439602-43ebca2327af?q=80&w=1000")}`,
         type: bestPost?.type === 'Video' ? 'Reel' : 'Post',
         likes: bestPost?.likesCount || 0,
         views: bestPost?.videoViewCount || 0,
@@ -389,7 +391,7 @@ export default function App() {
       profile: {
         username: data.user?.username || username,
         fullName: data.user?.fullName || "Amplify User",
-        avatarUrl: data.user?.profilePicUrl ? `/api/image-proxy?url=${encodeURIComponent(data.user?.profilePicUrl)}` : undefined,
+        avatarUrl: data.user?.profilePicUrl ? `${imageProxyBase}?url=${encodeURIComponent(data.user?.profilePicUrl)}` : undefined,
         followers: data.user?.followersCount?.toLocaleString() || "0",
         following: data.user?.followingCount?.toLocaleString() || "0",
         posts: data.user?.postsCount?.toLocaleString() || posts.length,
