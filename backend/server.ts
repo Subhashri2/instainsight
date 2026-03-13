@@ -4,18 +4,18 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import { scrapeInstagramProfile } from "./scraper.js";
-import { scanBuyerIntent } from "./utils/buyerIntentScanner.js";
+import { scrapeInstagramProfile } from "./scraper.ts";
+import { scanBuyerIntent } from "./utils/buyerIntentScanner.ts";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenAI, SubjectReferenceImage, SubjectReferenceType } from "@google/genai";
 
 // Supabase
-import { registerUser, loginUser, validateToken } from "./lib/supabase.js";
+import { registerUser, loginUser, validateToken } from "./lib/supabase.ts";
 import {
   saveProfile, savePosts, saveComments, saveAnalysis,
   getAnalyses, getPostRecordId,
   type ProfileData, type PostData, type CommentData,
-} from "./lib/db.js";
+} from "./lib/db.ts";
 
 // ─── Load instruction markdown files once at startup ─────────────────────────
 const __filename = fileURLToPath(import.meta.url);

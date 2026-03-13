@@ -5,7 +5,7 @@
  */
 
 import "../env.js";
-import { supabaseAdmin } from "./supabase.js";
+import { supabaseAdmin } from "./supabase.ts";
 
 const supabase = supabaseAdmin;
 
